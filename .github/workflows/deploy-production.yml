@@ -35,22 +35,17 @@ jobs:
           version: "latest"
 
       - name: Install dependencies
-        run: uv sync
-
-      - name: Run comprehensive test suite
+        # Locked versions, minus torch, its CUDA wheels and the spaCy model:
+        # the unit tests run the app in process and load neither.
         run: |
-          python run_tests.py
-        continue-on-error: false
+          SKIP=$(grep -oE '^name = "(torch|triton|nvidia-[a-z0-9-]+|nl-core-news-lg)"' uv.lock \
+            | sed -E 's/name = "(.*)"/--no-install-package \1/')
+          uv sync --frozen --python 3.12 $SKIP
 
-      - name: Upload test results
-        uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: test-results
-          path: |
-            test_results.json
-            test_report.md
-          retention-days: 7
+      - name: Run unit tests
+        # scripts/run_tests.py is a local helper (it starts a server, builds
+        # Docker and pushes tags); CI runs pytest directly.
+        run: uv run --frozen --no-sync python -m pytest tests/unit -v -p no:cacheprovider
 
   build-and-deploy:
     name: Build Production Image

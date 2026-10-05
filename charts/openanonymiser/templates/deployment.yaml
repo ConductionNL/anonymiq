@@ -87,10 +87,27 @@ spec:
               value: {{ .Values.app.env.defaultTransformersModel | quote }}
             - name: CRYPTO_KEY
               value: {{ .Values.app.env.cryptoKey | quote }}
+            {{- with .Values.app.auth }}
+            {{- if .existingSecret }}
             - name: BASIC_AUTH_USERNAME
-              value: {{ .Values.app.auth.username | quote }}
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .existingSecret | quote }}
+                  key: {{ .usernameKey | default "username" | quote }}
             - name: BASIC_AUTH_PASSWORD
-              value: {{ .Values.app.auth.password | quote }}
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .existingSecret | quote }}
+                  key: {{ .passwordKey | default "password" | quote }}
+            {{- else }}
+            - name: BASIC_AUTH_USERNAME
+              value: {{ .username | default "admin" | quote }}
+            - name: BASIC_AUTH_PASSWORD
+              value: {{ .password | default "" | quote }}
+            {{- end }}
+            {{- end }}
+            - name: ALLOWED_ORIGINS
+              value: {{ (.Values.app.cors).allowedOrigins | default "" | quote }}
             # Data directory configuration for persistent volume
             - name: LOG_DIR
               value: "/app/data/logs"

@@ -114,8 +114,9 @@ app:
     defaultSpacyModel: "nl_core_news_md"
     cryptoKey: "your-secret-key"       # Wijzig dit!
   auth:
-    username: "admin"                  # Wijzig dit!
-    password: "secure-password"        # Wijzig dit!
+    existingSecret: "anonymiq-basic-auth"  # Secret met de sleutels username en password
+  cors:
+    allowedOrigins: ""                 # Leeg = geen CORS (server naar server)
 
 # Resources
 resources:
@@ -131,16 +132,19 @@ resources:
 
 Voor productie gebruik:
 
-1. **Secrets**: Gebruik Kubernetes secrets voor gevoelige waarden:
+1. **Authenticatie (verplicht)**: alle routes onder `/api/v1/documents` vragen HTTP Basic. Zonder wachtwoord weigert de service elk documentverzoek met 401; `/api/v1/health`, `/api/v1/analyze` en `/api/v1/anonymize` blijven bereikbaar. Zet de gegevens in een Kubernetes secret en verwijs ernaar met `app.auth.existingSecret`:
 ```bash
-kubectl create secret generic openanonymiser-secrets \
-  --from-literal=crypto-key=your-secret-key \
-  --from-literal=auth-password=secure-password
+kubectl -n <namespace> create secret generic anonymiq-basic-auth \
+  --from-literal=username=<gebruiker> \
+  --from-literal=password=<lang-willekeurig-wachtwoord>
 ```
+Lokaal en in docker-compose gebruik je `BASIC_AUTH_USERNAME` en `BASIC_AUTH_PASSWORD`.
 
-2. **TLS**: Enable TLS in ingress configuratie
+2. **CORS**: standaard uit. Alleen een browser-frontend op een ander origin heeft het nodig; noem die origins expliciet in `app.cors.allowedOrigins` (of `ALLOWED_ORIGINS`, komma-gescheiden). Een wildcard `*` wordt bij het opstarten geweigerd. De ingress zet zelf geen CORS-headers meer.
 
-3. **Monitoring**: Health checks zijn al geconfigureerd op `/health`
+3. **TLS**: Enable TLS in ingress configuratie
+
+4. **Monitoring**: Health checks zijn al geconfigureerd op `/health`
 
 ### 5. Testen (pytest)
 
