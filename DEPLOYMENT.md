@@ -17,9 +17,9 @@ git checkout feature/string-endpoints
 git push origin feature/string-endpoints
 
 # This triggers:
-# ✅ Automatic testing (feature-testing.yml)
-# ✅ Auto-tag 'dev' if tests pass
-# ✅ Docker image build
+# ✅ Unit tests (feature-testing.yml, pytest tests/unit)
+# Only when the repository variable PUBLISH_FEATURE_IMAGES=true:
+# ✅ Docker image build and the 'dev' tag (staging pulls 'dev')
 ```
 
 ### 2. **Manual Staging Deployment** 
@@ -59,8 +59,8 @@ git push origin main
 ### 🔄 **Available Workflows:**
 
 #### `feature-testing.yml` - Auto-testing & Tagging
-- **Trigger:** Push to any feature branch
-- **Actions:** Test → Tag `dev` → Build images
+- **Trigger:** Push to any feature branch, and pull requests to main or development
+- **Actions:** Unit tests (`pytest tests/unit`); building images and moving the `dev` tag only with the repository variable `PUBLISH_FEATURE_IMAGES=true`
 - **Perfect for:** Development workflow
 
 #### `deploy-staging.yml` - Manual Staging Deploy  
