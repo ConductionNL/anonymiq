@@ -1,5 +1,16 @@
 # Proposal: object-detection-in-page-images
 
+## Summary
+
+Give anonymiq a locally run detector that finds signatures, faces and number plates as objects in page images and answers their regions to OpenRegister's image seam, which burns them like any other region.
+
+- Rows: 4.20 "A signature, a face or a number plate is found as an object in a page image and masked" (not statutory).
+- Wave: 2.
+- Depends on: `openregister/anonymisation-image-seam` (https://github.com/ConductionNL/openregister/issues/4380), the caller and the contract.
+- Decision: D6 (2026-10-05), anonymiq gets an `openspec/` and owns the detector while OpenRegister owns the seam; and the detector half of D5, which kept filinq's `image-redaction` to signatures until a detector exists.
+
+Build rules: openspec/woo-build-rules.md (in this Python repo: ruff, mypy and pytest, as its note says)
+
 ## Where this lives
 
 anonymiq had no `openspec/` folder; this change creates it. anonymiq is a
