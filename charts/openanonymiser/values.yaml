@@ -43,9 +43,8 @@ ingress:
     nginx.ingress.kubernetes.io/proxy-connect-timeout: "300"
     nginx.ingress.kubernetes.io/proxy-send-timeout: "300"
     nginx.ingress.kubernetes.io/proxy-read-timeout: "300"
-    nginx.ingress.kubernetes.io/enable-cors: "true"
-    nginx.ingress.kubernetes.io/cors-allow-methods: "GET, POST, PUT, DELETE, OPTIONS"
-    nginx.ingress.kubernetes.io/cors-allow-headers: "DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range,Authorization"
+    # No ingress CORS: enable-cors without cors-allow-origin answers every origin
+    # with "*". The app answers CORS itself, only for app.cors.allowedOrigins.
     nginx.ingress.kubernetes.io/ssl-redirect: "true"
     cert-manager.io/cluster-issuer: "letsencrypt-prod"
   hosts:
@@ -110,6 +109,19 @@ app:
     defaultSpacyModel: "nl_core_news_md"
     defaultTransformersModel: "pdelobelle/robbert-v2-dutch-base"
     cryptoKey: "your-secret-crypto-key"
+  # HTTP Basic credentials for the /api/v1/documents routes. Required: with
+  # no password set, every document route answers 401 (fail closed). Prefer
+  # existingSecret, so the password never sits in git or in the Argo CD app.
   auth:
+    # Name of a Secret holding the credentials. When set, username/password
+    # below are ignored.
+    existingSecret: ""
+    usernameKey: "username"
+    passwordKey: "password"
     username: "admin"
-    password: "admin" 
+    password: ""
+  # Browser origins allowed to call the API, comma separated. Empty keeps CORS
+  # off, which is right for server to server callers (they send no Origin).
+  # A wildcard is refused at startup.
+  cors:
+    allowedOrigins: ""
