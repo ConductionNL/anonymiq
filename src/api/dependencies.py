@@ -49,7 +49,9 @@ def get_user(
     if not settings.BASIC_AUTH_PASSWORD:
         # Fail closed: without a configured password nobody gets in, rather
         # than an empty password matching an empty one.
-        logger.error("BASIC_AUTH_PASSWORD is not set; refusing every document request.")
+        logger.error(
+            "BASIC_AUTH_PASSWORD is not set; refusing every authenticated request."
+        )
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect username or password",

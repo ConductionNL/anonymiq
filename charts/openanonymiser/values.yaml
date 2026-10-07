@@ -109,8 +109,8 @@ app:
     defaultSpacyModel: "nl_core_news_md"
     defaultTransformersModel: "pdelobelle/robbert-v2-dutch-base"
     cryptoKey: "your-secret-crypto-key"
-  # HTTP Basic credentials for the /api/v1/documents routes. Required: with
-  # no password set, every document route answers 401 (fail closed). Prefer
+  # HTTP Basic credentials for /api/v1/documents, /analyze and /anonymize. Required: with
+  # no password set, each of those routes answers 401 (fail closed). Prefer
   # existingSecret, so the password never sits in git or in the Argo CD app.
   auth:
     # Name of a Secret holding the credentials. When set, username/password
