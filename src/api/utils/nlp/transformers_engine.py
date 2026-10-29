@@ -19,7 +19,9 @@ class TransformersEngine(NLPEngine):
                 Standaard is "GroNLP/bert-base-dutch-cased".
         """
         self.model_name = model_name
-        self.ner_pipeline = pipeline(
+        # The typed overloads of pipeline() omit task-specific kwargs such as
+        # aggregation_strategy, which the token-classification pipeline accepts.
+        self.ner_pipeline = pipeline(  # type: ignore[call-overload]
             "ner", model=model_name, aggregation_strategy="simple"
         )
 
