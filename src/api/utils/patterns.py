@@ -270,6 +270,37 @@ class DutchPassportIdRecognizer(PatternRecognizer):
         )
 
 
+# (name, regex, score) of every case-number pattern.
+_CASE_NUMBER_PATTERNS: tuple[tuple[str, str, float], ...] = (
+    # Z-YYYY-999999 (Z-jaar-nummer), ook permissief met '-' of '/'
+    ("CASE_Z", r"\bZ[-\/]?\d{4}[-\/]?\d{4,6}\b", 0.55),
+    # WOO/BEZWAAR/INT/VTH/WP-YYYY-999 (of langer)
+    ("CASE_PREFIXED", r"\b(?:WOO|BEZWAAR|INT|VTH|WP)[-\/]?\d{4}[-\/]?\d{3,6}\b", 0.6),
+    # Algemeen Jaar-Nummer (risico op false positives, lagere score)
+    ("CASE_YEAR_NUMBER", r"\b\d{4}[-\/]\d{4,6}\b", 0.45),
+    # BAG ID, exact 16 cijfers (lager vertrouwen want generiek)
+    ("CASE_BAG_ID", r"\b\d{16}\b", 0.4),
+    # UUID-stijl Zaak-ID (case-insensitive hex)
+    (
+        "CASE_UUID",
+        r"(?i)\b[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}\b",
+        0.6,
+    ),
+    # Civiel: C/XX/NNNNNN (meer digits toegestaan)
+    ("CASE_C_CIVIL", r"\bC\/\d{2}\/\d{5,8}\b", 0.55),
+    # Bestuurlijk: AWB 21/12345
+    ("CASE_AWB", r"\bAWB\s?\d{2}\/\d{3,6}\b", 0.6),
+    # Hoge Raad: HR 21/00123
+    ("CASE_HR", r"\bHR\s?\d{2}\/\d{5}\b", 0.6),
+    # Gerechtshof: 200.12345
+    ("CASE_GERECHTSHOF", r"\b200\.\d{5}\b", 0.55),
+    # Strafzaak OM: 08/123456-89
+    ("CASE_OM", r"\b\d{2}\/\d{6}-\d{2}\b", 0.6),
+    # Algemeen: RBAMS 21/12345 (of andere rechtbankcodes 4-5 letters)
+    ("CASE_COURT_GENERIC", r"\b[A-Z]{4,5}\s?\d{2}\/\d{3,6}\b", 0.55),
+)
+
+
 class CaseNumberRecognizer(PatternRecognizer):
     """Herkenner voor diverse (rechts)zaak- en dossiernummers.
 
@@ -281,72 +312,7 @@ class CaseNumberRecognizer(PatternRecognizer):
         self, context: Optional[List[str]] = None, supported_language: str = "nl"
     ) -> None:
         patterns = [
-            # Z-YYYY-999999 (Z-jaar-nummer), ook permissief met '-' of '/'
-            Pattern(
-                "CASE_Z",
-                r"\bZ[-\/]?\d{4}[-\/]?\d{4,6}\b",
-                0.55,
-            ),
-            # WOO/BEZWAAR/INT/VTH/WP-YYYY-999 (of langer)
-            Pattern(
-                "CASE_PREFIXED",
-                r"\b(?:WOO|BEZWAAR|INT|VTH|WP)[-\/]?\d{4}[-\/]?\d{3,6}\b",
-                0.6,
-            ),
-            # Algemeen Jaar-Nummer (risico op false positives, lagere score)
-            Pattern(
-                "CASE_YEAR_NUMBER",
-                r"\b\d{4}[-\/]\d{4,6}\b",
-                0.45,
-            ),
-            # BAG ID, exact 16 cijfers (lager vertrouwen want generiek)
-            Pattern(
-                "CASE_BAG_ID",
-                r"\b\d{16}\b",
-                0.4,
-            ),
-            # UUID-stijl Zaak-ID (case-insensitive hex)
-            Pattern(
-                "CASE_UUID",
-                r"(?i)\b[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}\b",
-                0.6,
-            ),
-            # Civiel: C/XX/NNNNNN (meer digits toegestaan)
-            Pattern(
-                "CASE_C_CIVIL",
-                r"\bC\/\d{2}\/\d{5,8}\b",
-                0.55,
-            ),
-            # Bestuurlijk: AWB 21/12345
-            Pattern(
-                "CASE_AWB",
-                r"\bAWB\s?\d{2}\/\d{3,6}\b",
-                0.6,
-            ),
-            # Hoge Raad: HR 21/00123
-            Pattern(
-                "CASE_HR",
-                r"\bHR\s?\d{2}\/\d{5}\b",
-                0.6,
-            ),
-            # Gerechtshof: 200.12345
-            Pattern(
-                "CASE_GERECHTSHOF",
-                r"\b200\.\d{5}\b",
-                0.55,
-            ),
-            # Strafzaak OM: 08/123456-89
-            Pattern(
-                "CASE_OM",
-                r"\b\d{2}\/\d{6}-\d{2}\b",
-                0.6,
-            ),
-            # Algemeen: RBAMS 21/12345 (of andere rechtbankcodes 4-5 letters)
-            Pattern(
-                "CASE_COURT_GENERIC",
-                r"\b[A-Z]{4,5}\s?\d{2}\/\d{3,6}\b",
-                0.55,
-            ),
+            Pattern(name, regex, score) for name, regex, score in _CASE_NUMBER_PATTERNS
         ]
         super().__init__(
             supported_entity="CASE_NO",
