@@ -1,0 +1,41 @@
+version: 2
+
+# Version updates target development, where changes are integrated before a
+# release to main. Security updates keep following the repository settings.
+updates:
+  - package-ecosystem: uv
+    directory: /
+    target-branch: development
+    schedule:
+      interval: weekly
+    groups:
+      python:
+        patterns: ["*"]
+        update-types: [minor, patch]
+
+  - package-ecosystem: npm
+    directory: /src/ui
+    target-branch: development
+    schedule:
+      interval: weekly
+    groups:
+      ui:
+        patterns: ["*"]
+        update-types: [minor, patch]
+
+  - package-ecosystem: docker
+    directories:
+      - /
+      - /src/ui
+    target-branch: development
+    schedule:
+      interval: weekly
+
+  - package-ecosystem: github-actions
+    directory: /
+    target-branch: development
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns: ["*"]
