@@ -456,7 +456,7 @@ def _record_occurrence(
 
 
 def _redact_rect(
-    page: pymupdf.Page,
+    page: pymupdf.Page,  # type: ignore
     page_idx: int,
     r: pymupdf.Rect,
     redaction: _Redaction,
@@ -471,13 +471,13 @@ def _redact_rect(
         f"with font size {str(font_size)} and font name {str(font_name)}"
     )
     try:
-        page.add_redact_annot(
+        page.add_redact_annot(  # type: ignore
             r,
             fill=(1, 1, 1),
             text=redaction.mask,
             fontsize=int(font_size),
         )
-        page.apply_redactions()
+        page.apply_redactions()  # type: ignore
     except Exception as e:
         target = redaction.target.encode("utf-8", errors="replace").decode(
             "ascii", errors="ignore"
