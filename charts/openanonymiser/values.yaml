@@ -2,7 +2,7 @@
 replicaCount: 1
 
 image:
-  repository: mwest2020/openanonymiser
+  repository: ghcr.io/conductionnl/anonymiq
   tag: main
   pullPolicy: IfNotPresent
 

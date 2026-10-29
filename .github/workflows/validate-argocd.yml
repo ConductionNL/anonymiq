@@ -38,6 +38,7 @@ jobs:
           prod = load(root / 'production-app.yaml')
 
           errors = []
+          IMAGE_REPOSITORY = 'ghcr.io/conductionnl/anonymiq'
 
           # Staging expectations
           try:
@@ -76,6 +77,8 @@ jobs:
           try:
               vals_prod = load(charts / 'values.yaml')
               image_tag_prod = vals_prod.get('image', {}).get('tag')
+              if vals_prod.get('image', {}).get('repository') != IMAGE_REPOSITORY:
+                  errors.append(f'values.yaml: image.repository must be {IMAGE_REPOSITORY}')
               if image_tag_prod not in ('main', 'latest'):
                   errors.append(f'values.yaml: image.tag should be "main" or "latest", found "{image_tag_prod}"')
               # Prod ingress host and tls
@@ -91,6 +94,8 @@ jobs:
           try:
               vals_stg = load(charts / 'values-staging.yaml')
               image_tag_stg = vals_stg.get('image', {}).get('tag')
+              if vals_stg.get('image', {}).get('repository') != IMAGE_REPOSITORY:
+                  errors.append(f'values-staging.yaml: image.repository must be {IMAGE_REPOSITORY}')
               if image_tag_stg != 'dev':
                   errors.append(f'values-staging.yaml: image.tag should be "dev", found "{image_tag_stg}"')
               pull_policy_stg = vals_stg.get('image', {}).get('pullPolicy')

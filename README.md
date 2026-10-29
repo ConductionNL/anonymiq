@@ -91,7 +91,7 @@ Belangrijke configureerbare waarden in `values.yaml`:
 ```yaml
 # Image configuratie
 image:
-  repository: mwest2020/openanonymiser
+  repository: ghcr.io/conductionnl/anonymiq
   tag: latest
 
 # Ingress voor externe toegang
