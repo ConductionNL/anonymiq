@@ -395,64 +395,100 @@ def anonymize_pdf(
 
     doc: pymupdf.Document = pymupdf.open(input_path)
     occurrences: List[_Occurrence] = []
-    id_counter = 0
 
     for target, entity_type in replacements.items():
-        mask = masks.get(entity_type, f"[{entity_type.upper()}]")
+        redaction = _Redaction(
+            target=target,
+            entity_type=entity_type,
+            mask=masks.get(entity_type, f"[{entity_type.upper()}]"),
+            hashed_key=hashed_key,
+            private_key=private_key,
+        )
         for page_idx, page in enumerate(doc):  # type: ignore
-            page: pymupdf.Page  # type: ignore
-            rects = page.search_for(target)
-            for r in rects:
-                # Get text style information around the target text
-                font_size, font_name = extract_font_details(
-                    page_idx=page_idx, page=page, r=r
+            for r in page.search_for(target):
+                occurrences.append(
+                    _record_occurrence(f"ann{len(occurrences)}", page_idx, r, redaction)
                 )
-
-                logging.debug(
-                    f"Found target target='{target.encode('utf-8', errors='ignore').decode('ascii', errors='ignore')}"
-                    f"with font size {str(font_size)} and font name {str(font_name)}"
-                )
-                font_size = int(font_size)  # Ensure font size is an integer
-                # Record before redaction so coordinates refer to original.
-                occ: _Occurrence = {  # type: ignore
-                    "id": f"ann{id_counter}",
-                    "page": page_idx + 1,
-                    "rect": (r.x0, r.y0, r.x1, r.y1),
-                    "entity_type": entity_type,
-                    "entity_mask": mask,
-                    "encrypted_entity": encrypt_entity(
-                        data=target.encode("utf-8"), key=hashed_key
-                    ),
-                    "key_fingerprint": get_fingerprint(data=private_key),
-                }
-                occurrences.append(occ)
-                id_counter += 1
-
-                try:
-                    page.add_redact_annot(
-                        r,
-                        fill=(1, 1, 1),
-                        text=mask,
-                        fontsize=font_size,
-                    )
-                    page.apply_redactions()
-                except Exception as e:
-                    logging.error(
-                        f"Failed to add redaction for target='{target.encode('utf-8', errors='replace').decode('ascii', errors='ignore')} on page {page_idx + 1}: {e}"
-                    )
-                    continue  # Skip this occurrence if redaction fails
-                logging.debug(
-                    f"Added redaction for target='{
-                        target.encode('utf-8', errors='ignore').decode(
-                            'ascii', errors='ignore'
-                        )
-                    }' on page {page_idx + 1}."
-                )
+                _redact_rect(page, page_idx, r, redaction)
 
     doc.save(output_path, incremental=incremental_save)
 
     _embed_occurrences_xmp(output_path, occurrences)
     return occurrences
+
+
+@dataclass(frozen=True)
+class _Redaction:
+    """One text to redact, with its mask and the keys its record is sealed with."""
+
+    target: str
+    entity_type: str
+    mask: str
+    hashed_key: bytes
+    private_key: str
+
+    def ascii_target(self) -> str:
+        """Return the target with non-ASCII characters dropped, for logging."""
+        return self.target.encode("utf-8", errors="ignore").decode(
+            "ascii", errors="ignore"
+        )
+
+
+def _record_occurrence(
+    occurrence_id: str, page_idx: int, r: pymupdf.Rect, redaction: _Redaction
+) -> _Occurrence:
+    """Return the record of one occurrence, with its text encrypted.
+
+    It is taken before redaction, so the coordinates refer to the original.
+    """
+    occ: _Occurrence = {  # type: ignore
+        "id": occurrence_id,
+        "page": page_idx + 1,
+        "rect": (r.x0, r.y0, r.x1, r.y1),
+        "entity_type": redaction.entity_type,
+        "entity_mask": redaction.mask,
+        "encrypted_entity": encrypt_entity(
+            data=redaction.target.encode("utf-8"), key=redaction.hashed_key
+        ),
+        "key_fingerprint": get_fingerprint(data=redaction.private_key),
+    }
+    return occ
+
+
+def _redact_rect(
+    page: pymupdf.Page,
+    page_idx: int,
+    r: pymupdf.Rect,
+    redaction: _Redaction,
+) -> None:
+    """Redact one rectangle with the mask in the font size found there.
+
+    A failed redaction is logged and skipped; its occurrence stays recorded.
+    """
+    font_size, font_name = extract_font_details(page_idx=page_idx, page=page, r=r)
+    logging.debug(
+        f"Found target target='{redaction.ascii_target()}"
+        f"with font size {str(font_size)} and font name {str(font_name)}"
+    )
+    try:
+        page.add_redact_annot(
+            r,
+            fill=(1, 1, 1),
+            text=redaction.mask,
+            fontsize=int(font_size),
+        )
+        page.apply_redactions()
+    except Exception as e:
+        target = redaction.target.encode("utf-8", errors="replace").decode(
+            "ascii", errors="ignore"
+        )
+        logging.error(
+            f"Failed to add redaction for target='{target} on page {page_idx + 1}: {e}"
+        )
+        return
+    logging.debug(
+        f"Added redaction for target='{redaction.ascii_target()}' on page {page_idx + 1}."
+    )
 
 
 def extract_font_details(
