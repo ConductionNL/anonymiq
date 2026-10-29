@@ -7,7 +7,6 @@ The health route stays public for the liveness and readiness probes.
 import uuid
 
 import pytest
-from fastapi.routing import APIRoute
 from fastapi.testclient import TestClient
 
 from src.api.main import app
@@ -35,11 +34,13 @@ ROUTE_IDS = [f"{m} {p.replace(FILE_ID, '{file_id}')}" for m, p, _ in DOCUMENT_RO
 
 def test_the_table_covers_every_document_route() -> None:
     """A document route added later must be added to this table too."""
+    # Read from the OpenAPI schema: newer FastAPI releases keep included
+    # routers in app.routes as lazy wrappers, not as APIRoute objects.
     registered = {
-        (method, route.path)
-        for route in app.routes
-        if isinstance(route, APIRoute) and "/documents" in route.path
-        for method in route.methods
+        (method.upper(), path)
+        for path, operations in app.openapi()["paths"].items()
+        if "/documents" in path
+        for method in operations
     }
     covered = {(m, p.replace(FILE_ID, "{file_id}")) for m, p, _ in DOCUMENT_ROUTES}
     assert registered == covered
