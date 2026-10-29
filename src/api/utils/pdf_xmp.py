@@ -358,7 +358,7 @@ def anonymize_pdf(
     *,
     entity_masks: Optional[Dict[str, str]] = None,
     incremental_save: bool = False,
-) -> List[dict]:
+) -> List[_Occurrence]:
     """Anonymise *input_path* and write to *output_path*.
 
     Args:

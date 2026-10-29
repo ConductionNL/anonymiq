@@ -101,6 +101,7 @@ class DutchBSNRecognizer(PatternRecognizer):
         digits = [int(d) for d in bsn if d.isdigit()]
         return sum((9 - i) * d for i, d in enumerate(digits)) % 11 == 0
 
+
 class DutchPostcodeRecognizer(PatternRecognizer):
     def __init__(
         self, context: Optional[List[str]] = None, supported_language: str = "nl"
