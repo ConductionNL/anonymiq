@@ -238,32 +238,9 @@ def analyze_and_anonymize_document(
         FileNotFoundError: If the source document cannot be found
         ValueError: If the anonymization process fails to produce a valid output file
     """
-    source_path = doc.source_path
     analyzer = ModularTextAnalyzer()
-
-    entities = getattr(doc, "_entities", None)
-    if not entities:
-        text = ""
-        try:
-            import pymupdf
-
-            pdf_doc: pymupdf.Document = pymupdf.open(source_path)
-            text = "\n".join(p.get_text() for p in pdf_doc)  # type: ignore
-            pdf_doc.close()
-        except Exception:
-            text = ""
-        entities = analyzer.analyze_text(text) if text else []
-        doc._entities = entities
-
-    selected = []
-    for e in entities:
-        if e["entity_type"] in request_body.pii_entities_to_anonymize:
-            e_copy = e.copy()
-            for field in ("start", "end", "score"):
-                if field in e_copy:
-                    e_copy[field] = str(e_copy[field])
-            selected.append(e_copy)
-
+    entities = _document_entities(doc, analyzer)
+    selected = _select_entities(entities, request_body.pii_entities_to_anonymize)
     mapping = {e["text"]: e["entity_type"].lower() for e in selected}
 
     from src.api.config import settings
@@ -272,46 +249,86 @@ def analyze_and_anonymize_document(
     anonym_dir.mkdir(parents=True, exist_ok=True)
     out_path = anonym_dir / f"{file_id}.pdf"
 
-    try:
-        logger.info(
-            f"Starting anonymization for document {file_id} with {len(mapping)} entities"
-        )
-
-        if not os.path.exists(source_path):
-            raise FileNotFoundError(f"Source file {source_path} not found")
-
-        anonym_dir.mkdir(parents=True, exist_ok=True)
-        occurrences = anonymize_pdf(str(source_path), str(out_path), mapping, key)
-
-        if not os.path.exists(out_path) or os.path.getsize(out_path) == 0:
-            raise ValueError("Anonymization failed to produce valid output file")
-
-        if len(occurrences) != len(mapping):
-            if len(occurrences) < len(mapping):
-                logger.warning(
-                    f"Only {len(occurrences)} out of {len(mapping)} entities were processed"
-                )
-            else:
-                logger.info(
-                    f"Processed {len(occurrences)} occurrences of {len(mapping)} unique entities"
-                )
-
-        status_text = f"success ({len(occurrences)} entities processed)"
-    except FileNotFoundError as exc:
-        logger.error(f"File not found error: {exc}", exc_info=True)
-        status_text = f"failed: {exc}"
-    except ValueError as exc:
-        logger.error(f"Value error during anonymization: {exc}", exc_info=True)
-        status_text = f"failed: {exc}"
-    except Exception as exc:  # pragma: no cover - depends on external libs
-        logger.error(f"Unexpected error during anonymization: {exc}", exc_info=True)
-        status_text = f"failed: {exc}"
-
+    status_text = _anonymize_to_output(doc.source_path, out_path, mapping, key)
     return AnalysisAnonymizationResponse(
         selected_entities=selected,
         output_path=out_path,
         status_text=status_text,
     )
+
+
+def _document_entities(
+    doc: database.Document, analyzer: ModularTextAnalyzer
+) -> list[dict]:
+    """Return the PII entities of a document, analyzing its text once.
+
+    The result is cached on the document as ``_entities``.
+    """
+    entities = getattr(doc, "_entities", None)
+    if not entities:
+        text = extract_text_from_pdf(Path(doc.source_path))
+        entities = analyzer.analyze_text(text) if text else []
+        doc._entities = entities
+    return entities
+
+
+def _select_entities(entities: list[dict], entity_types: list[str]) -> list[dict]:
+    """Return copies of the entities of the requested types.
+
+    The ``start``, ``end`` and ``score`` fields are turned into strings.
+    """
+    selected = []
+    for e in entities:
+        if e["entity_type"] in entity_types:
+            e_copy = e.copy()
+            for field in ("start", "end", "score"):
+                if field in e_copy:
+                    e_copy[field] = str(e_copy[field])
+            selected.append(e_copy)
+    return selected
+
+
+def _anonymize_to_output(
+    source_path: str, out_path: Path, mapping: dict[str, str], key: str
+) -> str:
+    """Write the anonymized PDF and return the status text of the run."""
+    try:
+        logger.info(
+            f"Starting anonymization for document {out_path.stem} with {len(mapping)} entities"
+        )
+
+        if not os.path.exists(source_path):
+            raise FileNotFoundError(f"Source file {source_path} not found")
+
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        occurrences = anonymize_pdf(str(source_path), str(out_path), mapping, key)
+
+        if not os.path.exists(out_path) or os.path.getsize(out_path) == 0:
+            raise ValueError("Anonymization failed to produce valid output file")
+
+        _log_occurrence_count(len(occurrences), len(mapping))
+        return f"success ({len(occurrences)} entities processed)"
+    except FileNotFoundError as exc:
+        logger.error(f"File not found error: {exc}", exc_info=True)
+        return f"failed: {exc}"
+    except ValueError as exc:
+        logger.error(f"Value error during anonymization: {exc}", exc_info=True)
+        return f"failed: {exc}"
+    except Exception as exc:  # pragma: no cover - depends on external libs
+        logger.error(f"Unexpected error during anonymization: {exc}", exc_info=True)
+        return f"failed: {exc}"
+
+
+def _log_occurrence_count(occurrence_count: int, entity_count: int) -> None:
+    """Log when the redacted occurrences differ from the unique entities."""
+    if occurrence_count < entity_count:
+        logger.warning(
+            f"Only {occurrence_count} out of {entity_count} entities were processed"
+        )
+    elif occurrence_count > entity_count:
+        logger.info(
+            f"Processed {occurrence_count} occurrences of {entity_count} unique entities"
+        )
 
 
 def extract_text_from_pdf(source_path: Path) -> str:
