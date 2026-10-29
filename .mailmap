@@ -1,0 +1,9 @@
+# Maps the identities one person or bot used over time onto a single name and
+# address, so `git shortlog`, `git blame` and history-based tools count each
+# contributor once. Only identities that are clearly the same person are merged.
+# Format: https://git-scm.com/docs/gitmailmap
+Ruben van der Linde <ruben@conduction.nl> <rubenvdlinde@gmail.com>
+Mark Westerweel <markwesterweel@conduction.nl> <66728126+MWest2020@users.noreply.github.com>
+Mark Westerweel <markwesterweel@conduction.nl> <mwesterweel@hotmail.com>
+Razo van Berkel <razo.van.berkel@centric.eu> <razovanberkel@gmail.com>
+Razo van Berkel <razo.van.berkel@centric.eu> <31627398+thekaasking@users.noreply.github.com>
