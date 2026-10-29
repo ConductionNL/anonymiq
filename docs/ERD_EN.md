@@ -1,4 +1,4 @@
-# OpenAnonymiser Entity Relationship Diagram (ERD)
+# Anonymiq Entity Relationship Diagram (ERD)
 
 This document describes the relational database schema for persistent storage of documents, tags, and anonymization events.  
 **Note:** PII entities are not stored in the database for privacy reasons; they are processed in-memory and encoded/encrypted in the PDF metadata.

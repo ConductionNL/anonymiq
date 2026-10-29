@@ -7,7 +7,7 @@ on:
       - staging
       - development
   pull_request:
-    branches: [ main ]
+    branches: [ main, development ]
 
 jobs:
   test-and-tag:
@@ -18,38 +18,44 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v4
-        with:
-          python-version: '3.12'
-
       - name: Install uv
         uses: astral-sh/setup-uv@v3
         with:
           version: "latest"
 
       - name: Install dependencies
-        run: uv sync
-
-      - name: Run comprehensive test suite
-        id: tests
+        # Locked versions, minus torch, its CUDA wheels and the spaCy model:
+        # the unit tests run the app in process and load neither.
         run: |
-          python run_tests.py
-          echo "tests_passed=$?" >> $GITHUB_OUTPUT
+          SKIP=$(grep -oE '^name = "(torch|triton|nvidia-[a-z0-9-]+|nl-core-news-lg)"' uv.lock \
+            | sed -E 's/name = "(.*)"/--no-install-package \1/')
+          uv sync --frozen --python 3.12 $SKIP
+
+      # This step used to run `python run_tests.py` from the repo root, where
+      # no such file exists, so no test ever ran. scripts/run_tests.py is a
+      # local helper (it starts a server, builds Docker, pushes tags); CI runs
+      # pytest directly, and a failing test fails the job.
+      - name: Run unit tests
+        run: uv run --frozen --no-sync python -m pytest tests/unit -v -p no:cacheprovider
+
+      # Publishing is opt in. Staging pulls the `dev` tag with pullPolicy
+      # Always, so publishing from every green feature branch would put
+      # unreviewed code on staging. Set the repository variable
+      # PUBLISH_FEATURE_IMAGES=true to restore the old behaviour.
 
       - name: Set up Docker Buildx (if tests passed)
-        if: steps.tests.outputs.tests_passed == '0'
+        if: github.event_name == 'push' && vars.PUBLISH_FEATURE_IMAGES == 'true'
         uses: docker/setup-buildx-action@v3
 
       - name: Log in to Docker Hub (if tests passed)
-        if: steps.tests.outputs.tests_passed == '0'
+        if: github.event_name == 'push' && vars.PUBLISH_FEATURE_IMAGES == 'true'
         uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_PASSWORD }}
 
       - name: Build and push dev image (if tests passed)
-        if: steps.tests.outputs.tests_passed == '0'
+        if: github.event_name == 'push' && vars.PUBLISH_FEATURE_IMAGES == 'true'
         uses: docker/build-push-action@v5
         with:
           context: .
@@ -61,7 +67,7 @@ jobs:
           cache-to: type=gha,mode=max
 
       - name: Create and push dev tag (if tests passed)
-        if: steps.tests.outputs.tests_passed == '0'
+        if: github.event_name == 'push' && vars.PUBLISH_FEATURE_IMAGES == 'true'
         run: |
           BRANCH_NAME=${GITHUB_REF#refs/heads/}
           
@@ -74,79 +80,3 @@ jobs:
           git push origin dev --force
           
           echo "✅ Dev tag updated and pushed!" >> $GITHUB_STEP_SUMMARY
-
-      - name: Create test summary
-        if: always()
-        run: |
-          BRANCH_NAME=${GITHUB_REF#refs/heads/}
-          
-          echo "## 🧪 Feature Branch Test Results" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Branch:** \`${BRANCH_NAME}\`" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          
-          if [ "${{ steps.tests.outputs.tests_passed }}" = "0" ]; then
-            echo "### ✅ All Tests Passed!" >> $GITHUB_STEP_SUMMARY
-            echo "" >> $GITHUB_STEP_SUMMARY
-            echo "**Automatic Actions Completed:**" >> $GITHUB_STEP_SUMMARY
-            echo "- 🏷️ Created/updated \`dev\` tag" >> $GITHUB_STEP_SUMMARY
-            echo "- 🐳 Built and pushed Docker images:" >> $GITHUB_STEP_SUMMARY
-            echo "  - \`mwest2020/openanonymiser:dev\`" >> $GITHUB_STEP_SUMMARY
-            echo "  - \`mwest2020/openanonymiser:feature-${BRANCH_NAME}\`" >> $GITHUB_STEP_SUMMARY
-            echo "" >> $GITHUB_STEP_SUMMARY
-            echo "### 🚀 Ready for Staging!" >> $GITHUB_STEP_SUMMARY
-            echo "" >> $GITHUB_STEP_SUMMARY
-            echo "**Deploy to staging:**" >> $GITHUB_STEP_SUMMARY
-            echo '```bash' >> $GITHUB_STEP_SUMMARY
-            echo "kubectl set image deployment/openanonymiser openanonymiser=mwest2020/openanonymiser:dev -n openanonymiser" >> $GITHUB_STEP_SUMMARY
-            echo '```' >> $GITHUB_STEP_SUMMARY
-            echo "" >> $GITHUB_STEP_SUMMARY
-            echo "**Test staging deployment:**" >> $GITHUB_STEP_SUMMARY
-            echo '```bash' >> $GITHUB_STEP_SUMMARY
-            echo "python test_endpoints.py https://api.openanonymiser.commonground.nu" >> $GITHUB_STEP_SUMMARY
-            echo '```' >> $GITHUB_STEP_SUMMARY
-          else
-            echo "### ❌ Tests Failed" >> $GITHUB_STEP_SUMMARY
-            echo "" >> $GITHUB_STEP_SUMMARY
-            echo "**No automatic tagging performed.**" >> $GITHUB_STEP_SUMMARY
-            echo "Fix the failing tests before deployment." >> $GITHUB_STEP_SUMMARY
-          fi
-
-      - name: Comment on PR (if PR and tests passed)
-        if: github.event_name == 'pull_request' && steps.tests.outputs.tests_passed == '0'
-        uses: actions/github-script@v7
-        with:
-          script: |
-            github.rest.issues.createComment({
-              issue_number: context.issue.number,
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              body: `## 🎉 All Tests Passed! 
-              
-              **Automatic actions completed:**
-              - ✅ All tests passed (local, Docker, integration)
-              - 🏷️ Updated \`dev\` tag for latest stable version
-              - 🐳 Built and pushed Docker images
-              
-              **Ready for staging deployment:**
-              \`\`\`bash
-              kubectl set image deployment/openanonymiser openanonymiser=mwest2020/openanonymiser:dev -n openanonymiser
-              \`\`\`
-              
-              **Test cloud API:**
-              \`\`\`bash
-              python test_endpoints.py https://api.openanonymiser.commonground.nu
-              \`\`\`
-              
-              This PR is ready to merge! 🚀`
-            })
-
-      - name: Upload test artifacts
-        uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: test-results-${{ github.ref_name }}
-          path: |
-            test_results.json
-            test_report.md
-          retention-days: 3

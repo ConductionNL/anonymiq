@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# OpenAnonymiser String Endpoints Test Script
+# Anonymiq String Endpoints Test Script
 # Usage: ./test_endpoints.sh [base_url]
 
 BASE_URL="${1:-http://localhost:8080}"
@@ -211,7 +211,7 @@ test_error_handling() {
 
 # Main execution
 main() {
-    echo -e "${BLUE}🚀 OpenAnonymiser String Endpoints Test Suite${NC}"
+    echo -e "${BLUE}🚀 Anonymiq String Endpoints Test Suite${NC}"
     echo -e "${BLUE}Testing against: $BASE_URL${NC}"
     echo ""
     

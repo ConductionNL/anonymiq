@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Automated test runner for OpenAnonymiser string endpoints.
+Automated test runner for Anonymiq string endpoints.
 
 This script:
 1. Starts the API locally with `uv run api.py`
@@ -151,7 +151,7 @@ class TestRunner:
 
         try:
             result = subprocess.run(
-                ["docker", "build", "-t", "openanonymiser:test-string-endpoints", "."],
+                ["docker", "build", "-t", "anonymiq:test-string-endpoints", "."],
                 capture_output=True,
                 text=True,
             )
@@ -189,10 +189,10 @@ class TestRunner:
                     "run",
                     "-d",
                     "--name",
-                    "test-openanonymiser",
+                    "test-anonymiq",
                     "-p",
                     "8081:8080",
-                    "openanonymiser:test-string-endpoints",
+                    "anonymiq:test-string-endpoints",
                 ],
                 capture_output=True,
                 text=True,
@@ -299,9 +299,9 @@ class TestRunner:
             # Always cleanup container
             self.log("🧹 Cleaning up Docker container...")
             subprocess.run(
-                ["docker", "stop", "test-openanonymiser"], capture_output=True
+                ["docker", "stop", "test-anonymiq"], capture_output=True
             )
-            subprocess.run(["docker", "rm", "test-openanonymiser"], capture_output=True)
+            subprocess.run(["docker", "rm", "test-anonymiq"], capture_output=True)
 
     def generate_report(self):
         """Generate test report."""
@@ -353,7 +353,7 @@ class TestRunner:
         summary = report["summary"]
         results = report["results"]
 
-        md = f"""# OpenAnonymiser String Endpoints Test Report
+        md = f"""# Anonymiq String Endpoints Test Report
 
 ## Summary
 - **Status**: {"✅ PASSED" if summary["all_tests_passed"] else "❌ FAILED"}
@@ -448,6 +448,12 @@ class TestRunner:
                 
                 if push_result.returncode == 0:
                     self.log("🚀 Dev tag pushed to remote - ready for deployment!")
+                    # FROZEN: the Deployment name, the container name and the
+                    # image repository all still read `openanonymiser` in the
+                    # live cluster. This line is a command an operator pastes,
+                    # so printing the new name would hand them a `kubectl` that
+                    # fails with NotFound — or, worse, silently targets nothing.
+                    # These move with the chart, not with this rename.
                     self.log("💡 Deploy with: kubectl set image deployment/openanonymiser openanonymiser=mwest2020/openanonymiser:dev")
                 else:
                     self.log(f"⚠️ Failed to push dev tag: {push_result.stderr}", "WARNING")

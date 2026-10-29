@@ -1,6 +1,6 @@
-# OpenAnonymizer: Modulaire PII-detectie voor Nederlandse tekst
+# Anonymiq: Modulaire PII-detectie voor Nederlandse tekst
 
-Presidio-NL is een modulaire API-service voor het detecteren en anonimiseren van privacygevoelige informatie (PII) in Nederlandse tekst. De service is gebaseerd op [Microsoft Presidio](https://github.com/microsoft/presidio) en biedt ondersteuning voor verschillende NLP-modellen (zoals spaCy of HuggingFace transformers) zonder dat de API of logica hoeft te worden aangepast.
+Anonymiq is een modulaire API-service voor het detecteren en anonimiseren van privacygevoelige informatie (PII) in Nederlandse tekst. De service is gebaseerd op [Microsoft Presidio](https://github.com/microsoft/presidio) en biedt ondersteuning voor verschillende NLP-modellen (zoals spaCy of HuggingFace transformers) zonder dat de API of logica hoeft te worden aangepast.
 
 ## Installatie & Gebruik
 
@@ -46,13 +46,13 @@ Kies patterns voor “vormvaste” entiteiten, en NLP voor “vrije‑tekst” e
 Bouw het backend image:
 
 ```bash
-docker build -t openanonymizer .
+docker build -t anonymiq .
 ```
 
 Start alleen de backend container:
 
 ```bash
-docker run -d -p 8001:8080 --name openanonymiser openanonymizer
+docker run -d -p 8001:8080 --name anonymiq anonymiq
 ```
 
 API bereikbaar op [http://localhost:8001/api/v1/docs](http://localhost:8001/api/v1/docs)
@@ -61,8 +61,10 @@ API bereikbaar op [http://localhost:8001/api/v1/docs](http://localhost:8001/api/
 
 **⚠️ KRITIEKE VEREISTE: PERSISTENT STORAGE** 
 
-OpenAnonymiser vereist persistent storage voor:
-- SQLite database (`/app/openanonymiser.db`)
+Anonymiq vereist persistent storage voor:
+- SQLite database (`/app/openanonymiser.db` — de bestandsnaam blijft bewust
+  ongewijzigd; het bestand staat al op de PVC en een hernoeming zou stilzwijgend
+  een lege database aanmaken)
 - Geüploade PDF-bestanden (`/app/temp/source/`) 
 - Geanonimiseerde bestanden (`/app/temp/anonymized/`)
 - Applicatielogs (`/app/logs/`)
@@ -112,8 +114,9 @@ app:
     defaultSpacyModel: "nl_core_news_md"
     cryptoKey: "your-secret-key"       # Wijzig dit!
   auth:
-    username: "admin"                  # Wijzig dit!
-    password: "secure-password"        # Wijzig dit!
+    existingSecret: "anonymiq-basic-auth"  # Secret met de sleutels username en password
+  cors:
+    allowedOrigins: ""                 # Leeg = geen CORS (server naar server)
 
 # Resources
 resources:
@@ -129,16 +132,19 @@ resources:
 
 Voor productie gebruik:
 
-1. **Secrets**: Gebruik Kubernetes secrets voor gevoelige waarden:
+1. **Authenticatie (verplicht)**: alle routes onder `/api/v1/documents` vragen HTTP Basic. Zonder wachtwoord weigert de service elk documentverzoek met 401; `/api/v1/health`, `/api/v1/analyze` en `/api/v1/anonymize` blijven bereikbaar. Zet de gegevens in een Kubernetes secret en verwijs ernaar met `app.auth.existingSecret`:
 ```bash
-kubectl create secret generic openanonymiser-secrets \
-  --from-literal=crypto-key=your-secret-key \
-  --from-literal=auth-password=secure-password
+kubectl -n <namespace> create secret generic anonymiq-basic-auth \
+  --from-literal=username=<gebruiker> \
+  --from-literal=password=<lang-willekeurig-wachtwoord>
 ```
+Lokaal en in docker-compose gebruik je `BASIC_AUTH_USERNAME` en `BASIC_AUTH_PASSWORD`.
 
-2. **TLS**: Enable TLS in ingress configuratie
+2. **CORS**: standaard uit. Alleen een browser-frontend op een ander origin heeft het nodig; noem die origins expliciet in `app.cors.allowedOrigins` (of `ALLOWED_ORIGINS`, komma-gescheiden). Een wildcard `*` wordt bij het opstarten geweigerd. De ingress zet zelf geen CORS-headers meer.
 
-3. **Monitoring**: Health checks zijn al geconfigureerd op `/health`
+3. **TLS**: Enable TLS in ingress configuratie
+
+4. **Monitoring**: Health checks zijn al geconfigureerd op `/health`
 
 ### 5. Testen (pytest)
 
@@ -148,8 +154,12 @@ Gebruik de nieuwe use-case tests in `tests/test_usecases.py`. Stel een BASE URL 
 # Tegen lokale server
 pytest -q -k usecases
 
-# Tegen staging of productie
-OPENANONYMISER_BASE_URL="https://api.openanonymiser.accept.commonground.nu" pytest -q -k usecases
+# Tegen staging of productie.
+# De hostnames blijven `api.openanonymiser.*` — die DNS-namen zijn live en
+# `api.anonymiq.*` bestaat nog niet. De env-var heet nu ANONYMIQ_BASE_URL;
+# OPENANONYMISER_BASE_URL wordt nog steeds gelezen zodat bestaande scripts
+# blijven werken.
+ANONYMIQ_BASE_URL="https://api.openanonymiser.accept.commonground.nu" pytest -q -k usecases
 # of
-OPENANONYMISER_BASE_URL="https://api.openanonymiser.commonground.nu" pytest -q -k usecases
+ANONYMIQ_BASE_URL="https://api.openanonymiser.commonground.nu" pytest -q -k usecases
 ```
