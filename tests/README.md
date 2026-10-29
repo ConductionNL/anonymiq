@@ -1,4 +1,4 @@
-# OpenAnonymiser Test Suite
+# Anonymiq Test Suite
 
 Comprehensive test suite for the new string-based analyze and anonymize endpoints.
 

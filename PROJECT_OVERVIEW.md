@@ -1,7 +1,7 @@
-# OpenAnonymiser – Project Overview (for new engineers)
+# Anonymiq – Project Overview (for new engineers)
 
 ## Doel & kern
-OpenAnonymiser is een API voor detectie en anonimisering van PII in Nederlandse tekst en PDF’s. De service combineert NER‑modellen met regelgebaseerde herkenners (patterns) en biedt string‑ en document‑endpoints.
+Anonymiq is een API voor detectie en anonimisering van PII in Nederlandse tekst en PDF’s. De service combineert NER‑modellen met regelgebaseerde herkenners (patterns) en biedt string‑ en document‑endpoints.
 
 ## Architectuur (kort)
 - Endpoints (prefix `/api/v1`): `GET /health`, `POST /analyze`, `POST /anonymize`, documenten: `POST /documents/upload`, `GET /documents/{id}/metadata`, `POST /documents/{id}/anonymize`, `GET /documents/{id}/download`.
@@ -19,7 +19,7 @@ OpenAnonymiser is een API voor detectie en anonimisering van PII in Nederlandse 
 - Docker Compose:
   - `docker-compose up -d` (API op http://localhost:8001/api/v1/docs)
 - Use‑case tests (staging):
-  - `OPENANONYMISER_BASE_URL="https://api.openanonymiser.accept.commonground.nu" pytest -q tests/test_usecases.py`
+  - `ANONYMIQ_BASE_URL="https://api.openanonymiser.accept.commonground.nu" pytest -q tests/test_usecases.py`
 
 ## Environments & images
 - Staging (accept): image tag `dev`, pullPolicy `Always`, host `api.openanonymiser.accept.commonground.nu`.

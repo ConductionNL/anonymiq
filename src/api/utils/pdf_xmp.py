@@ -238,32 +238,9 @@ def analyze_and_anonymize_document(
         FileNotFoundError: If the source document cannot be found
         ValueError: If the anonymization process fails to produce a valid output file
     """
-    source_path = doc.source_path
     analyzer = ModularTextAnalyzer()
-
-    entities = getattr(doc, "_entities", None)
-    if not entities:
-        text = ""
-        try:
-            import pymupdf
-
-            pdf_doc: pymupdf.Document = pymupdf.open(source_path)
-            text = "\n".join(p.get_text() for p in pdf_doc)  # type: ignore
-            pdf_doc.close()
-        except Exception:
-            text = ""
-        entities = analyzer.analyze_text(text) if text else []
-        doc._entities = entities
-
-    selected = []
-    for e in entities:
-        if e["entity_type"] in request_body.pii_entities_to_anonymize:
-            e_copy = e.copy()
-            for field in ("start", "end", "score"):
-                if field in e_copy:
-                    e_copy[field] = str(e_copy[field])
-            selected.append(e_copy)
-
+    entities = _document_entities(doc, analyzer)
+    selected = _select_entities(entities, request_body.pii_entities_to_anonymize)
     mapping = {e["text"]: e["entity_type"].lower() for e in selected}
 
     from src.api.config import settings
@@ -272,46 +249,86 @@ def analyze_and_anonymize_document(
     anonym_dir.mkdir(parents=True, exist_ok=True)
     out_path = anonym_dir / f"{file_id}.pdf"
 
-    try:
-        logger.info(
-            f"Starting anonymization for document {file_id} with {len(mapping)} entities"
-        )
-
-        if not os.path.exists(source_path):
-            raise FileNotFoundError(f"Source file {source_path} not found")
-
-        anonym_dir.mkdir(parents=True, exist_ok=True)
-        occurrences = anonymize_pdf(str(source_path), str(out_path), mapping, key)
-
-        if not os.path.exists(out_path) or os.path.getsize(out_path) == 0:
-            raise ValueError("Anonymization failed to produce valid output file")
-
-        if len(occurrences) != len(mapping):
-            if len(occurrences) < len(mapping):
-                logger.warning(
-                    f"Only {len(occurrences)} out of {len(mapping)} entities were processed"
-                )
-            else:
-                logger.info(
-                    f"Processed {len(occurrences)} occurrences of {len(mapping)} unique entities"
-                )
-
-        status_text = f"success ({len(occurrences)} entities processed)"
-    except FileNotFoundError as exc:
-        logger.error(f"File not found error: {exc}", exc_info=True)
-        status_text = f"failed: {exc}"
-    except ValueError as exc:
-        logger.error(f"Value error during anonymization: {exc}", exc_info=True)
-        status_text = f"failed: {exc}"
-    except Exception as exc:  # pragma: no cover - depends on external libs
-        logger.error(f"Unexpected error during anonymization: {exc}", exc_info=True)
-        status_text = f"failed: {exc}"
-
+    status_text = _anonymize_to_output(doc.source_path, out_path, mapping, key)
     return AnalysisAnonymizationResponse(
         selected_entities=selected,
         output_path=out_path,
         status_text=status_text,
     )
+
+
+def _document_entities(
+    doc: database.Document, analyzer: ModularTextAnalyzer
+) -> list[dict]:
+    """Return the PII entities of a document, analyzing its text once.
+
+    The result is cached on the document as ``_entities``.
+    """
+    entities = getattr(doc, "_entities", None)
+    if not entities:
+        text = extract_text_from_pdf(Path(doc.source_path))
+        entities = analyzer.analyze_text(text) if text else []
+        doc._entities = entities
+    return entities
+
+
+def _select_entities(entities: list[dict], entity_types: list[str]) -> list[dict]:
+    """Return copies of the entities of the requested types.
+
+    The ``start``, ``end`` and ``score`` fields are turned into strings.
+    """
+    selected = []
+    for e in entities:
+        if e["entity_type"] in entity_types:
+            e_copy = e.copy()
+            for field in ("start", "end", "score"):
+                if field in e_copy:
+                    e_copy[field] = str(e_copy[field])
+            selected.append(e_copy)
+    return selected
+
+
+def _anonymize_to_output(
+    source_path: str, out_path: Path, mapping: dict[str, str], key: str
+) -> str:
+    """Write the anonymized PDF and return the status text of the run."""
+    try:
+        logger.info(
+            f"Starting anonymization for document {out_path.stem} with {len(mapping)} entities"
+        )
+
+        if not os.path.exists(source_path):
+            raise FileNotFoundError(f"Source file {source_path} not found")
+
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        occurrences = anonymize_pdf(str(source_path), str(out_path), mapping, key)
+
+        if not os.path.exists(out_path) or os.path.getsize(out_path) == 0:
+            raise ValueError("Anonymization failed to produce valid output file")
+
+        _log_occurrence_count(len(occurrences), len(mapping))
+        return f"success ({len(occurrences)} entities processed)"
+    except FileNotFoundError as exc:
+        logger.error(f"File not found error: {exc}", exc_info=True)
+        return f"failed: {exc}"
+    except ValueError as exc:
+        logger.error(f"Value error during anonymization: {exc}", exc_info=True)
+        return f"failed: {exc}"
+    except Exception as exc:  # pragma: no cover - depends on external libs
+        logger.error(f"Unexpected error during anonymization: {exc}", exc_info=True)
+        return f"failed: {exc}"
+
+
+def _log_occurrence_count(occurrence_count: int, entity_count: int) -> None:
+    """Log when the redacted occurrences differ from the unique entities."""
+    if occurrence_count < entity_count:
+        logger.warning(
+            f"Only {occurrence_count} out of {entity_count} entities were processed"
+        )
+    elif occurrence_count > entity_count:
+        logger.info(
+            f"Processed {occurrence_count} occurrences of {entity_count} unique entities"
+        )
 
 
 def extract_text_from_pdf(source_path: Path) -> str:
@@ -358,7 +375,7 @@ def anonymize_pdf(
     *,
     entity_masks: Optional[Dict[str, str]] = None,
     incremental_save: bool = False,
-) -> List[dict]:
+) -> List[_Occurrence]:
     """Anonymise *input_path* and write to *output_path*.
 
     Args:
@@ -378,64 +395,100 @@ def anonymize_pdf(
 
     doc: pymupdf.Document = pymupdf.open(input_path)
     occurrences: List[_Occurrence] = []
-    id_counter = 0
 
     for target, entity_type in replacements.items():
-        mask = masks.get(entity_type, f"[{entity_type.upper()}]")
+        redaction = _Redaction(
+            target=target,
+            entity_type=entity_type,
+            mask=masks.get(entity_type, f"[{entity_type.upper()}]"),
+            hashed_key=hashed_key,
+            private_key=private_key,
+        )
         for page_idx, page in enumerate(doc):  # type: ignore
-            page: pymupdf.Page  # type: ignore
-            rects = page.search_for(target)
-            for r in rects:
-                # Get text style information around the target text
-                font_size, font_name = extract_font_details(
-                    page_idx=page_idx, page=page, r=r
+            for r in page.search_for(target):
+                occurrences.append(
+                    _record_occurrence(f"ann{len(occurrences)}", page_idx, r, redaction)
                 )
-
-                logging.debug(
-                    f"Found target target='{target.encode('utf-8', errors='ignore').decode('ascii', errors='ignore')}"
-                    f"with font size {str(font_size)} and font name {str(font_name)}"
-                )
-                font_size = int(font_size)  # Ensure font size is an integer
-                # Record before redaction so coordinates refer to original.
-                occ: _Occurrence = {  # type: ignore
-                    "id": f"ann{id_counter}",
-                    "page": page_idx + 1,
-                    "rect": (r.x0, r.y0, r.x1, r.y1),
-                    "entity_type": entity_type,
-                    "entity_mask": mask,
-                    "encrypted_entity": encrypt_entity(
-                        data=target.encode("utf-8"), key=hashed_key
-                    ),
-                    "key_fingerprint": get_fingerprint(data=private_key),
-                }
-                occurrences.append(occ)
-                id_counter += 1
-
-                try:
-                    page.add_redact_annot(
-                        r,
-                        fill=(1, 1, 1),
-                        text=mask,
-                        fontsize=font_size,
-                    )
-                    page.apply_redactions()  # type: ignore
-                except Exception as e:
-                    logging.error(
-                        f"Failed to add redaction for target='{target.encode('utf-8', errors='replace').decode('ascii', errors='ignore')} on page {page_idx + 1}: {e}"
-                    )
-                    continue  # Skip this occurrence if redaction fails
-                logging.debug(
-                    f"Added redaction for target='{
-                        target.encode('utf-8', errors='ignore').decode(
-                            'ascii', errors='ignore'
-                        )
-                    }' on page {page_idx + 1}."
-                )
+                _redact_rect(page, page_idx, r, redaction)
 
     doc.save(output_path, incremental=incremental_save)
 
     _embed_occurrences_xmp(output_path, occurrences)
     return occurrences
+
+
+@dataclass(frozen=True)
+class _Redaction:
+    """One text to redact, with its mask and the keys its record is sealed with."""
+
+    target: str
+    entity_type: str
+    mask: str
+    hashed_key: bytes
+    private_key: str
+
+    def ascii_target(self) -> str:
+        """Return the target with non-ASCII characters dropped, for logging."""
+        return self.target.encode("utf-8", errors="ignore").decode(
+            "ascii", errors="ignore"
+        )
+
+
+def _record_occurrence(
+    occurrence_id: str, page_idx: int, r: pymupdf.Rect, redaction: _Redaction
+) -> _Occurrence:
+    """Return the record of one occurrence, with its text encrypted.
+
+    It is taken before redaction, so the coordinates refer to the original.
+    """
+    occ: _Occurrence = {  # type: ignore
+        "id": occurrence_id,
+        "page": page_idx + 1,
+        "rect": (r.x0, r.y0, r.x1, r.y1),
+        "entity_type": redaction.entity_type,
+        "entity_mask": redaction.mask,
+        "encrypted_entity": encrypt_entity(
+            data=redaction.target.encode("utf-8"), key=redaction.hashed_key
+        ),
+        "key_fingerprint": get_fingerprint(data=redaction.private_key),
+    }
+    return occ
+
+
+def _redact_rect(
+    page: pymupdf.Page,
+    page_idx: int,
+    r: pymupdf.Rect,
+    redaction: _Redaction,
+) -> None:
+    """Redact one rectangle with the mask in the font size found there.
+
+    A failed redaction is logged and skipped; its occurrence stays recorded.
+    """
+    font_size, font_name = extract_font_details(page_idx=page_idx, page=page, r=r)
+    logging.debug(
+        f"Found target target='{redaction.ascii_target()}"
+        f"with font size {str(font_size)} and font name {str(font_name)}"
+    )
+    try:
+        page.add_redact_annot(
+            r,
+            fill=(1, 1, 1),
+            text=redaction.mask,
+            fontsize=int(font_size),
+        )
+        page.apply_redactions()
+    except Exception as e:
+        target = redaction.target.encode("utf-8", errors="replace").decode(
+            "ascii", errors="ignore"
+        )
+        logging.error(
+            f"Failed to add redaction for target='{target} on page {page_idx + 1}: {e}"
+        )
+        return
+    logging.debug(
+        f"Added redaction for target='{redaction.ascii_target()}' on page {page_idx + 1}."
+    )
 
 
 def extract_font_details(

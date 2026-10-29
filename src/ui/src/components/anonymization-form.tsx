@@ -130,7 +130,7 @@ export function AnonymizationForm({ document, onComplete }: AnonymizationFormPro
                         </label>
                       </div>
                       <div className="space-y-2 pl-6 border-l-2 border-gray-200">
-                        {entities.map((entity: any, idx) => (
+                        {entities.map((entity, idx) => (
                           <div key={idx} className="text-sm text-gray-600">
                             {entity.text}
                           </div>

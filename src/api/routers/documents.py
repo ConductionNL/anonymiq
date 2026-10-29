@@ -24,7 +24,7 @@ from src.api.crud import (
     get_document,
     update_document_anonymized_path,
 )
-from src.api.dependencies import get_db
+from src.api.dependencies import get_db, get_user
 from src.api.dtos import (
     AddDocumentResponse,
     AddDocumentResponseSuccess,
@@ -36,7 +36,14 @@ from src.api.dtos import (
 from src.api.utils import pdf_xmp
 
 logger = logging.getLogger(__name__)
-documents_router = APIRouter(prefix="/documents", tags=["documents"])
+# Every document route requires HTTP Basic credentials. Documents reach this
+# service before redaction, so they carry personal data. The dependency sits on
+# the router, so a route added here later is protected without remembering to.
+documents_router = APIRouter(
+    prefix="/documents",
+    tags=["documents"],
+    dependencies=[Depends(get_user)],
+)
 
 
 def validate_files_extensions(files: list[UploadFile]) -> None:
@@ -61,7 +68,6 @@ async def upload_document(
     files: list[UploadFile] = FastAPIFile(...),
     tags: Optional[list[str]] = None,
     db: Session = Depends(get_db),
-    # username: str = Depends(get_user),
 ) -> AddDocumentResponse:
     validate_files_extensions(files)
     docs = await pdf_xmp.upload_and_analyze_files(files=files, tags=tags, db=db)
@@ -73,7 +79,6 @@ async def upload_document(
 async def deanonymize_document(
     file: UploadFile = FastAPIFile(...),
     db: Session = Depends(get_db),
-    # username: str = Depends(get_user),
 ) -> FileResponse:
     """The endpoint where the user can submit a document to deanonymize.
 
@@ -149,7 +154,6 @@ async def get_document_metadata(
     file_id: str,
     details: bool = False,
     db: Session = Depends(get_db),
-    # username: str = Depends(get_user),
 ) -> DocumentDto:
     """Get metadata for a specific document. Same response as upload."""
     file_id_check(file_id)
@@ -214,7 +218,6 @@ async def anonymize_document(
     file_id: str,
     request_body: DocumentAnonymizationRequest,
     db: Session = Depends(get_db),
-    # username: str = Depends(get_user),
 ) -> DocumentAnonymizationResponse:
     """Anonymize a specific document."""
     start = time.perf_counter()
@@ -289,7 +292,6 @@ async def download_document(
     file_id: str,
     keep_on_server: bool = False,
     db: Session = Depends(get_db),
-    # username: str = Depends(get_user),
 ) -> FileResponse:
     """Download a specific document.
 

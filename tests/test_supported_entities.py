@@ -4,8 +4,18 @@ import pytest
 
 
 def get_base_url() -> str:
+    # ANONYMIQ_BASE_URL is canonical; OPENANONYMISER_BASE_URL is still read
+    # because it is what every README, CI job and shell profile written before
+    # the rename sets. The DEFAULT host stays on the old name deliberately:
+    # api.anonymiq.accept.commonground.nu does not resolve, and pointing the
+    # suite at a host that answers nothing would turn a passing integration
+    # run into a connection error that looks like an outage.
     return os.getenv(
-        "OPENANONYMISER_BASE_URL", "https://api.openanonymiser.accept.commonground.nu"
+        "ANONYMIQ_BASE_URL",
+        os.getenv(
+            "OPENANONYMISER_BASE_URL",
+            "https://api.openanonymiser.accept.commonground.nu",
+        ),
     )
 
 

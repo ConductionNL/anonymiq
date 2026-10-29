@@ -15,6 +15,8 @@ services:
       - CRYPTO_KEY=examplekey
       - BASIC_AUTH_USERNAME=user
       - BASIC_AUTH_PASSWORD=user
+      # The dev UI below runs on another origin (port 8002).
+      - ALLOWED_ORIGINS=http://localhost:8002
     volumes:
       - presidio-data:/app/
       - ./data:/app/data  # Mount SQLite database directory
