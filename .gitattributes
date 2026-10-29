@@ -1,0 +1,7 @@
+# Generated files. GitHub collapses them in diffs and leaves them out of the
+# language statistics.
+uv.lock linguist-generated=true
+src/ui/package-lock.json linguist-generated=true
+
+# Binary fixtures.
+*.pdf binary
