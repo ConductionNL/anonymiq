@@ -375,7 +375,7 @@ def anonymize_pdf(
     *,
     entity_masks: Optional[Dict[str, str]] = None,
     incremental_save: bool = False,
-) -> List[dict]:
+) -> List[_Occurrence]:
     """Anonymise *input_path* and write to *output_path*.
 
     Args:
@@ -435,7 +435,7 @@ def anonymize_pdf(
                         text=mask,
                         fontsize=font_size,
                     )
-                    page.apply_redactions()  # type: ignore
+                    page.apply_redactions()
                 except Exception as e:
                     logging.error(
                         f"Failed to add redaction for target='{target.encode('utf-8', errors='replace').decode('ascii', errors='ignore')} on page {page_idx + 1}: {e}"
