@@ -1,4 +1,4 @@
-# OpenAnonymiser String Endpoints Test Scripts
+# Anonymiq String Endpoints Test Scripts
 
 Two standalone test scripts for testing the new string-based `/analyze` and `/anonymize` endpoints.
 
@@ -57,7 +57,7 @@ python tests/integration/test_endpoints.py https://api.openanonymiser.commongrou
 ## 📊 Output Example
 
 ```
-🚀 OpenAnonymiser String Endpoints Test Suite
+🚀 Anonymiq String Endpoints Test Suite
 Testing against: http://localhost:8080
 
 🔍 Testing Health Check
@@ -113,14 +113,14 @@ kill %1
 ### Docker Testing
 ```bash
 # 1. Build and run container
-docker build -t openanonymiser:test .
-docker run -d -p 8081:8080 openanonymiser:test
+docker build -t anonymiq:test .
+docker run -d -p 8081:8080 anonymiq:test
 
 # 2. Test container
 python tests/integration/test_endpoints.py http://localhost:8081
 
 # 3. Cleanup
-docker stop $(docker ps -q --filter ancestor=openanonymiser:test)
+docker stop $(docker ps -q --filter ancestor=anonymiq:test)
 ```
 
 ### CI/CD Integration

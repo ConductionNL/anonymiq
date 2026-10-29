@@ -6,6 +6,12 @@ import { Layout } from '../components/layout';
 import { Button } from '../components/ui/button';
 import type { DocumentDto } from '../types';
 
+/** Where the simulated document list is kept in the visitor's browser. */
+const DOCS_STORAGE_KEY = 'anonymiq_docs';
+
+/** The pre-rename key, still read once so existing visitors keep their list. */
+const LEGACY_DOCS_STORAGE_KEY = 'openAnonymiser_docs';
+
 export default function HomePage() {
   const [documents, setDocuments] = useState<DocumentDto[]>([]);
   const navigate = useNavigate();
@@ -13,7 +19,15 @@ export default function HomePage() {
   // In a real app, we'd fetch the documents from the API
   // Since there's no endpoint for listing documents, we'll use localStorage to simulate
   useEffect(() => {
-    const storedDocs = localStorage.getItem('openAnonymiser_docs');
+    // Read the new key, then the pre-rename one. The key lives in the
+    // VISITOR's browser, not in this repo, so renaming it without a fallback
+    // would not error — getItem() would just return null and every existing
+    // user would silently open an empty document list. Anything found under
+    // the old key is written back under the new one below, so the fallback
+    // stops being needed once a user has loaded the page again.
+    const storedDocs =
+      localStorage.getItem(DOCS_STORAGE_KEY) ??
+      localStorage.getItem(LEGACY_DOCS_STORAGE_KEY);
     if (storedDocs) {
       try {
         setDocuments(JSON.parse(storedDocs));
@@ -22,11 +36,11 @@ export default function HomePage() {
       }
     }
   }, []);
-  
+
   // Save documents to localStorage when they change
   useEffect(() => {
     if (documents.length > 0) {
-      localStorage.setItem('openAnonymiser_docs', JSON.stringify(documents));
+      localStorage.setItem(DOCS_STORAGE_KEY, JSON.stringify(documents));
     }
   }, [documents]);
   

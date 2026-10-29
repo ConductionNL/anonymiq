@@ -1,3 +1,4 @@
+import logging
 import os
 import secrets
 from typing import Annotated, Generator
@@ -21,6 +22,8 @@ engine = create_engine(settings.DATABASE_URL, connect_args={"check_same_thread":
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base.metadata.create_all(bind=engine, checkfirst=True)
 
+logger = logging.getLogger(__name__)
+
 # SEcurity stuff
 security = HTTPBasic()
 
@@ -43,6 +46,15 @@ def get_user(
     Returns:
         str: The username of the authenticated user.
     """
+    if not settings.BASIC_AUTH_PASSWORD:
+        # Fail closed: without a configured password nobody gets in, rather
+        # than an empty password matching an empty one.
+        logger.error("BASIC_AUTH_PASSWORD is not set; refusing every document request.")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Incorrect username or password",
+            headers={"WWW-Authenticate": "Basic"},
+        )
     current_username_bytes = credentials.username.encode("utf8")
     correct_username_bytes = settings.BASIC_AUTH_USERNAME.encode("utf8")
     is_correct_username = secrets.compare_digest(

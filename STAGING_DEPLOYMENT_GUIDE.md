@@ -45,7 +45,7 @@ metadata:
 spec:
   project: default
   source:
-    repoURL: https://github.com/ConductionNL/OpenAnonymiser.git
+    repoURL: https://github.com/ConductionNL/anonymiq.git
     targetRevision: staging  # ← Staging branch
     path: charts/openanonymiser
   destination:
@@ -71,7 +71,7 @@ metadata:
 spec:
   project: default
   source:
-    repoURL: https://github.com/ConductionNL/OpenAnonymiser.git
+    repoURL: https://github.com/ConductionNL/anonymiq.git
     targetRevision: main  # ← Production branch
     path: charts/openanonymiser
   destination:
