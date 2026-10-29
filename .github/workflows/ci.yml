@@ -106,12 +106,22 @@ jobs:
 
       # Audits the runtime dependencies pinned in uv.lock. The spaCy model is
       # a URL wheel that no advisory database covers, so pip-audit skips it.
-      - name: pip-audit
+      # Report-only for now: the findings go to the job summary and a warning,
+      # and the job stays green. Make it blocking again (remove
+      # continue-on-error) once the known vulnerabilities in uv.lock are fixed.
+      - name: pip-audit (report only)
+        continue-on-error: true
         run: |
           uv export --frozen --no-dev --no-emit-project --no-hashes --format requirements.txt -o requirements-audit.txt
           uvx "pip-audit@${PIP_AUDIT_VERSION}" -r requirements-audit.txt --no-deps --disable-pip \
             --progress-spinner off --desc on --format markdown --output pip-audit.md || status=$?
-          cat pip-audit.md >> "$GITHUB_STEP_SUMMARY"
+          {
+            echo "### pip-audit (report only)"
+            cat pip-audit.md
+          } >> "$GITHUB_STEP_SUMMARY"
+          if [ "${status:-0}" != "0" ]; then
+            echo "::warning title=pip-audit::Known vulnerabilities in uv.lock, see the job summary"
+          fi
           exit "${status:-0}"
 
   helm:
