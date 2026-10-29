@@ -1,4 +1,4 @@
-# OpenAnonymiser Entiteit-Relatie Diagram (ERD)
+# Anonymiq Entiteit-Relatie Diagram (ERD)
 
 Dit document beschrijft het relationele databasemodel voor het opslaan van documenten, tags en anonimiseer-gebeurtenissen.  
 **Let op:** PII-entiteiten worden om privacyredenen niet in de database opgeslagen; deze worden in-memory verwerkt en versleuteld/opgenomen in de PDF-metadata.

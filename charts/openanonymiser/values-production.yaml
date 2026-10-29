@@ -17,9 +17,8 @@ ingress:
     nginx.ingress.kubernetes.io/proxy-connect-timeout: "300"
     nginx.ingress.kubernetes.io/proxy-send-timeout: "300"
     nginx.ingress.kubernetes.io/proxy-read-timeout: "300"
-    nginx.ingress.kubernetes.io/enable-cors: "true"
-    nginx.ingress.kubernetes.io/cors-allow-methods: "GET, POST, PUT, DELETE, OPTIONS"
-    nginx.ingress.kubernetes.io/cors-allow-headers: "DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range,Authorization"
+    # No ingress CORS: enable-cors without cors-allow-origin answers every origin
+    # with "*". The app answers CORS itself, only for app.cors.allowedOrigins.
     # cert-manager.io/cluster-issuer: "letsencrypt-prod"  # Uncomment for automatic TLS
   hosts:
     - host: "api.openanonymiser.commonground.nu"
@@ -72,9 +71,14 @@ app:
     # cryptoKey: "SET_VIA_SECRET"
     cryptoKey: "CHANGE-THIS-SECRET-KEY-IN-PRODUCTION"
   auth:
-    # SECURITY: Use Kubernetes secrets instead of plain text!
-    username: "CHANGE-THIS-USERNAME"
-    password: "CHANGE-THIS-PASSWORD"
+    # Required: the document routes refuse every request until credentials
+    # are set. Create the Secret out of band, for example:
+    #   kubectl -n openanonymiser create secret generic anonymiq-basic-auth \
+    #     --from-literal=username=<user> --from-literal=password=<password>
+    existingSecret: "anonymiq-basic-auth"
+  cors:
+    # Comma separated browser origins; empty keeps CORS off.
+    allowedOrigins: ""
 
 # Security context
 securityContext:

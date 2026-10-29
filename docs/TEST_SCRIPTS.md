@@ -1,4 +1,4 @@
-# OpenAnonymiser Testscripts voor String Endpoints
+# Anonymiq Testscripts voor String Endpoints
 
 Twee standalone testscripts om de nieuwe string-endpoints `/analyze` en `/anonymize` te testen.
 
@@ -57,7 +57,7 @@ python tests/integration/test_endpoints.py https://api.openanonymiser.commongrou
 ## 📊 Voorbeeld output
 
 ```
-🚀 OpenAnonymiser String Endpoints Test Suite
+🚀 Anonymiq String Endpoints Test Suite
 Testen tegen: http://localhost:8080
 
 🔍 Health check
@@ -113,14 +113,14 @@ kill %1
 ### Docker-test
 ```bash
 # 1. Build en run de container
-docker build -t openanonymiser:test .
-docker run -d -p 8081:8080 openanonymiser:test
+docker build -t anonymiq:test .
+docker run -d -p 8081:8080 anonymiq:test
 
 # 2. Test container
 python tests/integration/test_endpoints.py http://localhost:8081
 
 # 3. Opruimen
-docker stop $(docker ps -q --filter ancestor=openanonymiser:test)
+docker stop $(docker ps -q --filter ancestor=anonymiq:test)
 ```
 
 ### CI/CD-integratie

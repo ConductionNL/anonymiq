@@ -1,6 +1,6 @@
-# OpenAnonymiser Integration Tests
+# Anonymiq Integration Tests
 
-This directory contains integration tests for the OpenAnonymiser API. These tests use FastAPI's TestClient to test the different endpoints and workflows.
+This directory contains integration tests for the Anonymiq API. These tests use FastAPI's TestClient to test the different endpoints and workflows.
 
 ## Requirements
 
