@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Dict, List, Optional
 
-from sqlalchemy import ForeignKey, String, Text, JSON, func
+from sqlalchemy import ForeignKey, String, Text, func
 from sqlalchemy.orm import (
     DeclarativeBase,
     Mapped,

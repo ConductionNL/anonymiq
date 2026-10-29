@@ -22,7 +22,7 @@ class SpacyEngine(NLPEngine):
                 from spacy.cli import download as spacy_download
 
                 spacy_download(model_name)
-                self.nlp = spacy.load(model_name)  # type: ignore[assignment]
+                self.nlp = spacy.load(model_name)
             except Exception as e:  # pragma: no cover
                 raise RuntimeError(
                     f"SpaCy model '{model_name}' kon niet worden geladen/geïnstalleerd: {e}"
