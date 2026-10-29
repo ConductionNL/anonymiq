@@ -28,7 +28,7 @@ anonymiq runs as its own container, next to Nextcloud rather than inside it.
 
 ## Functional components
 
-We group the code by what the service does, not by FastAPI layer. `sigrid.yaml` holds the exact patterns.
+We group the code by what the service does, not by FastAPI layer.
 
 | Component | What it covers |
 |---|---|
