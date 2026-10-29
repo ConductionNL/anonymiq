@@ -12,7 +12,7 @@ anonymiq runs as its own container, next to Nextcloud rather than inside it.
 |---|---|
 | OpenRegister | OpenRegister calls the REST API to analyse and anonymise text and documents |
 | Its own database | SQLite by default (`DATABASE_URL`), for uploaded documents and their anonymisation records |
-| NLP models | Loaded in-process: spaCy (`nl_core_news_lg`) or a transformers model, behind Presidio |
+| NLP models | Loaded in-process: spaCy (`nl_core_news_md`) or a transformers model, behind Presidio |
 
 ## Directory roles
 
