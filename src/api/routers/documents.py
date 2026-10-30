@@ -206,6 +206,13 @@ async def anonymize_document(
         time_ms_taken=int((time.perf_counter() - start) * 1000),
     )
     service.record_run(request.db, run)
+    return _anonymized_response(request, run)
+
+
+def _anonymized_response(
+    request: DocumentRequest, run: service.AnonymizationRun
+) -> DocumentAnonymizationResponse:
+    """Describe a successful run; a failed run is a 500 with its status."""
     if run.failed:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -213,7 +220,7 @@ async def anonymize_document(
         )
     return DocumentAnonymizationResponse(
         id=request.file_id,
-        filename=str(doc.filename),
+        filename=str(run.doc.filename),
         anonymized_at=datetime.now(),  # Use current time for response
         time_taken=run.time_ms_taken,
         status=run.result.status_text,
