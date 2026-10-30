@@ -19,11 +19,8 @@ from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
 from src.api.config import settings
-from src.api.crud import (
-    create_anonymization_event,
-    get_document,
-    update_document_anonymized_path,
-)
+from src.api.crud import get_document, save
+from src.api.database import AnonymizationEvent
 from src.api.dependencies import get_db, get_user
 from src.api.dtos import (
     AddDocumentResponse,
@@ -248,38 +245,27 @@ async def anonymize_document(
     end = time.perf_counter()
     time_ms_taken = int((end - start) * 1000)  # Convert to milliseconds
 
-    if result.status_text.startswith("failed"):
+    save(
+        db,
+        AnonymizationEvent(
+            document_id=file_id, time_taken=time_ms_taken, status=status_text
+        ),
+    )
+    if status_text.startswith("failed"):
         # Remove the output file if it exists but anonymization failed
         if os.path.exists(out_path):
             os.unlink(out_path)
-
-        # Create anonymization event to record the failure
-        event = create_anonymization_event(
-            db,
-            document_id=file_id,
-            time_taken=time_ms_taken,
-            status=status_text,
-        )
-        event._pii_entities = selected
-
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Document anonymization failed: {status_text}",
         )
 
-    # update DB entries
-    updated_doc = update_document_anonymized_path(db, file_id, str(out_path))
-    event = create_anonymization_event(
-        db,
-        document_id=file_id,
-        time_taken=time_ms_taken,
-        status=status_text,
-    )
-    event._pii_entities = selected
+    doc.anonymized_path = str(out_path)
+    updated_doc = save(db, doc)
 
     return DocumentAnonymizationResponse(
         id=file_id,
-        filename=str(updated_doc.filename) if updated_doc else "",
+        filename=str(updated_doc.filename),
         anonymized_at=datetime.now(),  # Use current time for response
         time_taken=time_ms_taken,
         status=status_text,
