@@ -526,10 +526,7 @@ def extract_font_details(
 
 
 def extract_annotations(
-    input_path: str,
-    *,
-    decryption_key: Optional[bytes] = None,
-    header: bytes = b"header",
+    input_path: str, *, decryption_key: Optional[bytes] = None
 ) -> List[dict]:
     """Return list of dictionaries parsed from XMP.
 
@@ -537,242 +534,153 @@ def extract_annotations(
     ``EncryptedEntity`` field of each record and add ``entity`` (plaintext).
     """
     logging.debug(f"Extracting annotations from {input_path}")
-    try:
-        with pikepdf.Pdf.open(input_path) as pdf:
-            if "/Metadata" not in pdf.Root:
-                logging.debug("No metadata found in PDF")
-                return []
-
-            try:
-                # Use errors='ignore' to handle any problematic characters
-                xmp_xml = pdf.Root.Metadata.read_bytes().decode(
-                    "utf-8", errors="ignore"
-                )
-            except UnicodeDecodeError:
-                logging.error("Failed to decode XMP metadata as UTF-8")
-                return []
-
-            # Remove any byte order mark that might cause issues
-            if xmp_xml.startswith("\ufeff"):
-                xmp_xml = xmp_xml[1:]
-
-            # Output debug info about the metadata structure
-            safe_preview = "".join(c for c in xmp_xml[:200] if ord(c) < 128)
-            logging.debug(f"Raw XMP content preview: {safe_preview}...")
-
-    except Exception as e:
-        logging.error(f"Failed to open PDF or read metadata: {e}")
+    xmp_xml = _read_xmp_packet(input_path)
+    if xmp_xml is None:
         return []
 
     # Try multiple extraction methods for maximum compatibility
-    occurrences: list[dict] = try_all_extraction_methods(
-        decryption_key=decryption_key, header=header, xmp_xml=xmp_xml
+    occurrences = try_all_extraction_methods(
+        XmpSource(xmp_xml=xmp_xml, decryption_key=decryption_key)
     )
     if occurrences:
         logging.debug(f"Found {len(occurrences)} occurrences in XMP metadata")
         return occurrences
-    else:
-        # No annotations found with any method
-        logging.debug("No annotations found in XMP with any extraction method")
-        return []
-
-
-def try_all_extraction_methods(
-    decryption_key: bytes | None, header: bytes, xmp_xml: str
-) -> List[dict]:
-    """Try all available methods to extract occurrences from XMP XML.
-
-    Wrapper function that attempts multiple extraction methods in order of preference.
-    Includes:
-        - CDATA section extraction (Method 1), fn: retrieve_occurrences_xmp_from_cdata
-        - Attribute-style extraction (Method 2), fn: retrieve_occurrences_from_xmp_attributes
-        - Old format with multiple Description elements (Method 3), fn: retrieve_custom_properties_from_xmp
-        - JSON pattern search (Method 4), fn: retrieve_json_occurrencesfrom_xmp
-
-    Args:
-        decryption_key (bytes | None): _description_
-        header (bytes): _description_
-        xmp_xml (str): _description_
-
-    Returns:
-        List[dict]: _description_
-    """
-    # Method 1: Look for CDATA section with various patterns
-    occurrences = retrieve_occurrences_xmp_from_cdata(decryption_key, header, xmp_xml)
-
-    # return occurrences
-    # Method 2: Try attribute-style extraction
-    try:
-        occurrences = retrieve_occurrences_from_xmp_attributes(
-            decryption_key, header, xmp_xml
-        )
-        if occurrences:
-            logging.debug(
-                f"Found {len(occurrences)} occurrences using attribute pattern"
-            )
-            return occurrences
-    except Exception as e:
-        logging.error(f"Failed to retrieve occurrences from XMP attributes: {e}")
-
-    # Method 3: Fallback to the old format with multiple Description elements
-    # return occurrences
-    try:
-        annotations = retrieve_custom_properties_from_xmp(
-            decryption_key, header, xmp_xml
-        )
-        if annotations:
-            logging.debug(f"Found {len(annotations)} annotations using old format")
-            return annotations
-
-    except Exception as e:
-        logging.error(f"Failed to retrieve custom properties from XMP: {e}")
-        annotations = []
-
-    # Method 4: Last resort - try to find JSON anywhere in the XMP
-    # This is a bit risky but might catch JSON embedded in unusual ways
-    try:
-        occurrences = retrieve_json_occurrencesfrom_xmp(decryption_key, header, xmp_xml)
-        if occurrences:
-            logging.debug(
-                f"Found {len(occurrences)} occurrences using JSON pattern search"
-            )
-        return occurrences
-    except Exception as e:
-        logging.error(f"Failed to retrieve JSON occurrences: {e}")
-
+    logging.debug("No annotations found in XMP with any extraction method")
     return []
 
 
-def retrieve_occurrences_xmp_from_cdata(
-    decryption_key: bytes | None, header: bytes, xmp_xml: str
-) -> List[dict]:
-    """Retrieve occurrences from XMP XML using CDATA patterns. Method 1.
+def _read_xmp_packet(input_path: str) -> Optional[str]:
+    """Return the XMP packet of a PDF without a byte order mark.
+
+    None when the PDF cannot be read or has no metadata stream.
+    """
+    try:
+        with pikepdf.Pdf.open(input_path) as pdf:
+            if "/Metadata" not in pdf.Root:
+                logging.debug("No metadata found in PDF")
+                return None
+            # Use errors='ignore' to handle any problematic characters
+            xmp_xml = pdf.Root.Metadata.read_bytes().decode("utf-8", errors="ignore")
+    except Exception as e:
+        logging.error(f"Failed to open PDF or read metadata: {e}")
+        return None
+
+    # Remove any byte order mark that might cause issues
+    if xmp_xml.startswith("﻿"):
+        xmp_xml = xmp_xml[1:]
+
+    safe_preview = "".join(c for c in xmp_xml[:200] if ord(c) < 128)
+    logging.debug(f"Raw XMP content preview: {safe_preview}...")
+    return xmp_xml
+
+
+@dataclass(frozen=True)
+class XmpSource:
+    """An XMP packet, with the key and header to decrypt its entities."""
+
+    xmp_xml: str
+    decryption_key: Optional[bytes] = None
+    header: bytes = b"header"
+
+
+def try_all_extraction_methods(source: XmpSource) -> List[dict]:
+    """Try all available methods to extract occurrences from XMP XML.
+
+    The readers run in order of preference and the first non-empty result wins:
+        - Attribute-style extraction, fn: retrieve_occurrences_from_xmp_attributes
+        - Old format with multiple Description elements,
+          fn: retrieve_custom_properties_from_xmp
+        - JSON pattern search, fn: retrieve_json_occurrencesfrom_xmp
+
+    The CDATA reader (retrieve_occurrences_xmp_from_cdata) runs first, but its
+    result is not used: the JSON pattern search reads the same CDATA blob.
 
     Args:
-        decryption_key (bytes | None): the key to decrypt entities, if available.
-        header (bytes): the header used for decryption.
-        xmp_xml (str): the XMP XML string to search for occurrences.
+        source (XmpSource): the XMP packet and the key to decrypt entities with.
+
+    Returns:
+        List[dict]: the occurrences found, or an empty list.
+    """
+    retrieve_occurrences_xmp_from_cdata(source)
+    for reader in _FALLBACK_READERS:
+        try:
+            occurrences = reader(source)
+        except Exception as e:
+            logging.error(f"Failed to retrieve occurrences with {reader.__name__}: {e}")
+            continue
+        if occurrences:
+            logging.debug(
+                f"Found {len(occurrences)} occurrences with {reader.__name__}"
+            )
+            return occurrences
+    return []
+
+
+_CDATA_PATTERNS = (
+    r"<custom:AnnotationData><!\[CDATA\[(.*?)\]\]></custom:AnnotationData>",
+    r"<custom:AnnotationData>\s*<!\[CDATA\[(.*?)\]\]>\s*</custom:AnnotationData>",
+    r"<custom:AnnotationData>(.*?)</custom:AnnotationData>",  # Non-CDATA version
+)
+
+
+def retrieve_occurrences_xmp_from_cdata(source: XmpSource) -> List[dict]:
+    """Retrieve occurrences from XMP XML using CDATA patterns.
+
+    Args:
+        source (XmpSource): the XMP packet and the key to decrypt entities with.
 
     Returns:
         List[dict]: A list of occurrences extracted from the XMP XML.
     """
-    cdata_patterns = [
-        r"<custom:AnnotationData><!\[CDATA\[(.*?)\]\]></custom:AnnotationData>",
-        r"<custom:AnnotationData>\s*<!\[CDATA\[(.*?)\]\]>\s*</custom:AnnotationData>",
-        r"<custom:AnnotationData>(.*?)</custom:AnnotationData>",  # Non-CDATA version
-    ]
-
-    for pattern in cdata_patterns:
-        match = re.search(pattern, xmp_xml, re.DOTALL)
-        if match:
-            json_blob = match.group(1).strip()
-            try:
-                data = json.loads(json_blob)
-                if isinstance(data, dict) and "occurrences" in data:
-                    occurrences: list = data["occurrences"]
-                    if occurrences:
-                        logging.debug(
-                            f"Found {len(occurrences)} occurrences using CDATA pattern"
-                        )
-
-                        # Process decryption if key is provided
-                        if decryption_key:
-                            for occ in occurrences:
-                                if "encrypted_entity" in occ:
-                                    try:
-                                        plaintext = decrypt_entity(
-                                            occ["encrypted_entity"],
-                                            decryption_key,
-                                            header,
-                                        )
-
-                                        occ["entity"] = plaintext.decode(
-                                            "utf-8", errors="replace"
-                                        )
-                                        logging.debug(
-                                            f"Decrypted entity for occurrence ID {occ.get('id', 'unknown')}"
-                                        )
-                                    except Exception as e:
-                                        logging.error(f"Failed to decrypt entity: {e}")
-                                        occ["entity"] = None
-                        else:
-                            logging.debug(
-                                "No decryption key provided, skipping entity decryption"
-                            )
-                        return occurrences
-
-            except json.JSONDecodeError as e:
-                logging.error(f"Failed to parse JSON from pattern match: {e}")
-                blob_preview = json_blob[:100] if json_blob else "empty"
-                logging.debug(f"JSON data preview: {blob_preview}...")
-                continue  # Try the next pattern if this one fails
+    for pattern in _CDATA_PATTERNS:
+        match = re.search(pattern, source.xmp_xml, re.DOTALL)
+        if not match:
+            continue
+        json_blob = match.group(1).strip()
+        try:
+            occurrences = _occurrence_list(json_blob)
+        except json.JSONDecodeError as e:
+            logging.error(f"Failed to parse JSON from pattern match: {e}")
+            logging.debug(f"JSON data preview: {json_blob[:100] or 'empty'}...")
+            continue
+        if occurrences:
+            return _decrypt_records(occurrences, source)
     logging.debug("No occurrences found in XMP using CDATA patterns")
-    return []  # No occurrences found with any of the CDATA patterns
+    return []
 
 
-def retrieve_occurrences_from_xmp_attributes(
-    decryption_key: bytes | None, header: bytes, xmp_xml: str
-) -> List[dict]:
-    """Retrieve occurrences from XMP XML using attribute pattern. Method 2.
+def retrieve_occurrences_from_xmp_attributes(source: XmpSource) -> List[dict]:
+    """Retrieve occurrences from XMP XML using attribute pattern.
 
     Args:
-        decryption_key (bytes | None): the key to decrypt entities, if available.
-        header (bytes): the header used for decryption.
-        xmp_xml (str): the XMP XML string to search for occurrences.
+        source (XmpSource): the XMP packet and the key to decrypt entities with.
 
     Returns:
         List[dict]: A list of occurrences extracted from the XMP XML.
     """
-    attr_start = xmp_xml.find('custom:AnnotationData="')
-    if attr_start != -1:
-        attr_start += len('custom:AnnotationData="')
-        attr_end = xmp_xml.find('"', attr_start)
-        if attr_end != -1:
-            json_blob = xmp_xml[attr_start:attr_end]
-            # Unescape XML entities
-            unescaped_json = saxutils.unescape(json_blob)
-
-            try:
-                data = json.loads(unescaped_json)
-                if isinstance(data, dict) and "occurrences" in data:
-                    occurrences: list = data["occurrences"]
-                    if occurrences:
-                        logging.debug(
-                            f"Found {len(occurrences)} occurrences using attribute pattern"
-                        )
-
-                        # Process decryption if key is provided
-                        if decryption_key:
-                            for occ in occurrences:
-                                if "encrypted_entity" in occ:
-                                    try:
-                                        plaintext = decrypt_entity(
-                                            occ["encrypted_entity"],
-                                            decryption_key,
-                                            header,
-                                        )
-                                        occ["entity"] = plaintext.decode(
-                                            "utf-8", errors="replace"
-                                        )
-                                    except Exception as e:
-                                        logging.error(f"Failed to decrypt entity: {e}")
-                                        occ["entity"] = None
-                        return occurrences
-
-            except json.JSONDecodeError as e:
-                logging.error(f"Failed to parse JSON from attribute: {e}")
-    return []  # No occurrences found with this method
+    marker = 'custom:AnnotationData="'
+    attr_start = source.xmp_xml.find(marker)
+    if attr_start == -1:
+        return []
+    attr_start += len(marker)
+    attr_end = source.xmp_xml.find('"', attr_start)
+    if attr_end == -1:
+        return []
+    try:
+        occurrences = _occurrence_list(
+            saxutils.unescape(source.xmp_xml[attr_start:attr_end])
+        )
+    except json.JSONDecodeError as e:
+        logging.error(f"Failed to parse JSON from attribute: {e}")
+        return []
+    return _decrypt_records(occurrences, source)
 
 
-def retrieve_custom_properties_from_xmp(
-    decryption_key: bytes | None, header: bytes, xmp_xml: str
-) -> List[dict]:
-    """Retrieve custom properties from XMP XML using regex. Method 3.
+def retrieve_custom_properties_from_xmp(source: XmpSource) -> List[dict]:
+    """Retrieve custom properties from XMP XML using regex.
 
     Args:
-        decryption_key (bytes | None): the key to decrypt entities, if available.
-        header (bytes): the header used for decryption.
-        xmp_xml (str): the XMP XML string to search for custom properties.
+        source (XmpSource): the XMP packet and the key to decrypt entities with.
 
     Returns:
         List[dict]: A list of dictionaries containing custom properties extracted from the XMP XML.
@@ -781,67 +689,77 @@ def retrieve_custom_properties_from_xmp(
     prop_re = re.compile(r"custom:([A-Za-z]+)=\"([^\"]*)\"")
 
     annotations: List[dict] = []
-    for m in tag_re.finditer(xmp_xml):
-        attrs_block = m.group(1)
-        props = {k: saxutils.unescape(v) for k, v in prop_re.findall(attrs_block)}
+    for m in tag_re.finditer(source.xmp_xml):
+        props = {k: saxutils.unescape(v) for k, v in prop_re.findall(m.group(1))}
         if props:  # Only add if we found properties
-            if decryption_key and "encrypted_entity" in props:
-                try:
-                    plaintext = decrypt_entity(
-                        props["encrypted_entity"], decryption_key, header
-                    )
-                    props["entity"] = plaintext.decode("utf-8", errors="replace")
-                except Exception:  # leave undecoded
-                    props["entity"] = None  # type: ignore
             annotations.append(props)
-    return annotations
+    return _decrypt_records(annotations, source)
 
 
-def retrieve_json_occurrencesfrom_xmp(
-    decryption_key: bytes | None, header: bytes, xmp_xml: str
-) -> List[dict]:
-    """Retrieve occurrences from XMP XML using a JSON pattern. Method 4.
+def retrieve_json_occurrencesfrom_xmp(source: XmpSource) -> List[dict]:
+    """Retrieve occurrences from XMP XML using a JSON pattern.
 
     Args:
-        decryption_key (bytes | None): the key to decrypt entities, if available.
-        header (bytes): the header used for decryption.
-        xmp_xml (str): the XMP XML string to search for occurrences.
+        source (XmpSource): the XMP packet and the key to decrypt entities with.
 
     Returns:
         List[dict]: A list of occurrences extracted from the XMP XML.
     """
-    json_pattern = r'\{"occurrences":\s*\[(.*?)\]\}'
-    match = re.search(json_pattern, xmp_xml, re.DOTALL)
-    if match:
-        try:
-            # Reconstruct the full JSON string
-            json_blob = f'{{"occurrences": [{match.group(1)}]}}'
-            data = json.loads(json_blob)
-            occurrences: list = data.get("occurrences", [])
-            if occurrences:
-                logging.debug(
-                    f"Found {len(occurrences)} occurrences using JSON pattern search"
-                )
+    match = re.search(r'\{"occurrences":\s*\[(.*?)\]\}', source.xmp_xml, re.DOTALL)
+    if not match:
+        return []
+    try:
+        # Reconstruct the full JSON string
+        occurrences = _occurrence_list(f'{{"occurrences": [{match.group(1)}]}}')
+    except json.JSONDecodeError as e:
+        logging.error(f"Failed to parse JSON from pattern search: {e}")
+        return []
+    return _decrypt_records(occurrences, source)
 
-                # Process decryption if key is provided
-                if decryption_key:
-                    for occ in occurrences:
-                        if "encrypted_entity" in occ:
-                            try:
-                                plaintext = decrypt_entity(
-                                    occ["encrypted_entity"], decryption_key, header
-                                )
-                                occ["entity"] = plaintext.decode(
-                                    "utf-8", errors="replace"
-                                )
-                            except Exception as e:
-                                logging.error(f"Failed to decrypt entity: {e}")
-                                occ["entity"] = None
-                return occurrences
-        except (json.JSONDecodeError, Exception) as e:
-            logging.error(f"Failed to parse JSON from pattern search: {e}")
 
-    return []  # No valid occurrences found
+_FALLBACK_READERS = (
+    retrieve_occurrences_from_xmp_attributes,
+    retrieve_custom_properties_from_xmp,
+    retrieve_json_occurrencesfrom_xmp,
+)
+
+
+def _occurrence_list(json_blob: str) -> list:
+    """Return the ``occurrences`` list of a JSON blob, or an empty list.
+
+    Raises:
+        json.JSONDecodeError: when the blob is not JSON.
+    """
+    data = json.loads(json_blob)
+    if not isinstance(data, dict):
+        return []
+    occurrences: list = data.get("occurrences") or []
+    return occurrences
+
+
+def _decrypt_records(records: list, source: XmpSource) -> list:
+    """Add the plaintext ``entity`` to every record that holds a ciphertext.
+
+    Without a decryption key the records are returned unchanged.
+    """
+    if not source.decryption_key:
+        return records
+    for record in records:
+        if "encrypted_entity" in record:
+            record["entity"] = _decrypt_or_none(record["encrypted_entity"], source)
+    return records
+
+
+def _decrypt_or_none(ciphertext: str, source: XmpSource) -> Optional[str]:
+    """Return the decrypted text, or None when it does not decrypt."""
+    try:
+        plaintext = decrypt_entity(
+            ciphertext, source.decryption_key or b"", source.header
+        )
+    except Exception as e:
+        logging.error(f"Failed to decrypt entity: {e}")
+        return None
+    return plaintext.decode("utf-8", errors="replace")
 
 
 def _embed_occurrences_xmp(pdf_path: str, occs: List[_Occurrence]) -> None:
