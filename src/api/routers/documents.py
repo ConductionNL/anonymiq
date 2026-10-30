@@ -125,18 +125,30 @@ def _restored_file_response(
 
 
 def _restore(temp: pdf_xmp.DeanonymizationFiles) -> BackgroundTasks:
-    """Write the restored PDF and return its cleanup; 422 without a record."""
+    """Write the restored PDF and return its cleanup.
+
+    422 without records, or with a record that does not decrypt or fit.
+    """
     try:
         doc = pdf_xmp.process_anonymized_pdf_to_deanonymize(
             anon_path=temp.anon_path, key=settings.CRYPTO_KEY.decode()
         )
-    except ValueError as ve:
-        logger.error(f"Value error during deanonymization: {str(ve)}", exc_info=True)
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="No anonymization metadata found in the document",
-        )
+    except ValueError as error:
+        raise _unrestorable(error)
     return pdf_xmp.save_document_and_cleanup(doc, temp)
+
+
+def _unrestorable(error: ValueError) -> HTTPException:
+    """Log why a PDF cannot be restored and return the 422 to raise."""
+    if isinstance(error, pdf_xmp.UnusableRecordError):
+        logger.error(f"Unusable record during deanonymization: {error}")
+        detail = f"The document cannot be restored: {error}"
+    else:
+        logger.error(f"Value error during deanonymization: {str(error)}", exc_info=True)
+        detail = "No anonymization metadata found in the document"
+    return HTTPException(
+        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=detail
+    )
 
 
 def _deanonymization_error(exc: Exception) -> HTTPException:
