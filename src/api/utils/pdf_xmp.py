@@ -16,9 +16,9 @@ from fastapi import BackgroundTasks, UploadFile
 from sqlalchemy.orm import Session
 
 from src.api import database
+from src.api.analysis.analyzer import TextAnalyzer, text_analyzer
 from src.api.crud import save
 from src.api.dtos import DocumentDto, DocumentTagDto
-from src.api.services.text_analyzer import ModularTextAnalyzer
 from src.api.utils.crypto import (
     aes_gcm_decrypt as decrypt_entity,
 )
@@ -335,7 +335,7 @@ def analyze_and_anonymize_document(
             - output_path (Path): Path to the anonymized output file
             - status_text (str): Status message describing the result of the operation
     """
-    entities = _document_entities(doc, ModularTextAnalyzer())
+    entities = _document_entities(doc, text_analyzer())
     selected = _select_entities(entities, order.entity_types)
     job = RedactionJob(
         input_path=doc.source_path,
@@ -359,9 +359,7 @@ def _anonymized_path(file_id: str) -> Path:
     return anonym_dir / f"{file_id}.pdf"
 
 
-def _document_entities(
-    doc: database.Document, analyzer: ModularTextAnalyzer
-) -> list[dict]:
+def _document_entities(doc: database.Document, analyzer: TextAnalyzer) -> list[dict]:
     """Return the PII entities of a document, analyzing its text once.
 
     The result is cached on the document as ``_entities``.
@@ -466,7 +464,7 @@ async def extract_unique_entities(
         tuple[list[dict[str, str]], list[dict[str, str]]]: the first list contains all entities found,
             the second list contains unique entities with their types and text.
     """
-    analyzer = ModularTextAnalyzer()
+    analyzer = text_analyzer()
     entities = analyzer.analyze_text(text) if text else []
     unique: list[dict[str, str]] = []
     seen = set()

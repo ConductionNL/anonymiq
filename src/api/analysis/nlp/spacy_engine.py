@@ -2,8 +2,8 @@ from typing import List, Optional
 
 import spacy
 
-from src.api.config import settings
-from src.api.utils.nlp.base import NLPEngine
+from src.api.analysis.analyzer import analysis_settings as settings
+from src.api.analysis.nlp.base import NLPEngine
 
 
 class SpacyEngine(NLPEngine):

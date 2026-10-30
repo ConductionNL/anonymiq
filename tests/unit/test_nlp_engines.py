@@ -9,8 +9,8 @@ from dataclasses import dataclass
 
 import pytest
 
-from src.api.utils.nlp.spacy_engine import SpacyEngine
-from src.api.utils.nlp.transformers_engine import TransformersEngine
+from src.api.analysis.nlp.spacy_engine import SpacyEngine
+from src.api.analysis.nlp.transformers_engine import TransformersEngine
 
 
 @dataclass

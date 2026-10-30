@@ -5,7 +5,7 @@ from typing import Optional, Union
 
 from fastapi import APIRouter, HTTPException, status
 
-from src.api.config import settings
+from src.api.analysis.analyzer import TextAnalyzer, analysis_settings, text_analyzer
 from src.api.dtos import (
     AnalyzeTextRequest,
     AnalyzeTextResponse,
@@ -13,14 +13,13 @@ from src.api.dtos import (
     AnonymizeTextResponse,
     PIIEntity,
 )
-from src.api.services.text_analyzer import ModularTextAnalyzer
 
 logger = logging.getLogger(__name__)
 text_analysis_router = APIRouter(tags=["text-analysis"])
 
 
 def create_pii_entities_from_results(results: list[dict]) -> list[PIIEntity]:
-    """Convert ModularTextAnalyzer results to PIIEntity DTOs."""
+    """Convert text analyzer results to PIIEntity DTOs."""
     return [
         PIIEntity(
             entity_type=result["entity_type"],
@@ -57,7 +56,7 @@ class _Analysis:
     """The analyzer for one request, with its engine, entity types and start time."""
 
     nlp_engine: str
-    analyzer: ModularTextAnalyzer
+    analyzer: TextAnalyzer
     entities: list[str]
     start_time: float
 
@@ -65,11 +64,11 @@ class _Analysis:
     def of(cls, request: AnalyzeTextRequest | AnonymizeTextRequest) -> "_Analysis":
         """Build the analyzer the request asks for, or the default one."""
         start_time = time.perf_counter()
-        nlp_engine = request.nlp_engine or settings.DEFAULT_NLP_ENGINE
+        nlp_engine = request.nlp_engine or analysis_settings.DEFAULT_NLP_ENGINE
         return cls(
             nlp_engine=nlp_engine,
-            analyzer=ModularTextAnalyzer(nlp_engine=nlp_engine),
-            entities=request.entities or settings.DEFAULT_ENTITIES,
+            analyzer=text_analyzer(nlp_engine),
+            entities=request.entities or analysis_settings.DEFAULT_ENTITIES,
             start_time=start_time,
         )
 

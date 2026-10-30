@@ -4,9 +4,9 @@ from typing import List, Optional
 from presidio_analyzer import AnalyzerEngine, RecognizerRegistry, RecognizerResult
 from presidio_analyzer.nlp_engine import NlpEngineProvider
 
-from src.api.config import settings
-from src.api.utils.nlp.loader import load_nlp_engine
-from src.api.utils.patterns import (
+from src.api.analysis.analyzer import analysis_settings as settings
+from src.api.analysis.nlp.loader import load_nlp_engine
+from src.api.analysis.patterns import (
     CaseNumberRecognizer,
     DutchBSNRecognizer,
     DutchDateRecognizer,

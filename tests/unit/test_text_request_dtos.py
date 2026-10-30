@@ -3,6 +3,7 @@
 import pytest
 from pydantic import ValidationError
 
+from src.api.analysis.analyzer import analysis_settings
 from src.api.config import settings
 from src.api.dtos import AnalyzeTextRequest, AnonymizeTextRequest
 
@@ -14,7 +15,7 @@ IDS = ["analyze", "anonymize"]
 def test_defaults_and_stripping(cls: type) -> None:
     request = cls(text="  Jan  ")
     assert request.text == "Jan"
-    assert request.language == settings.DEFAULT_LANGUAGE
+    assert request.language == analysis_settings.DEFAULT_LANGUAGE
     assert request.entities is None
     assert request.nlp_engine is None
 
@@ -81,6 +82,6 @@ def test_the_entity_lists() -> None:
         "DATE_TIME",
         "ADDRESS",
     ]
-    assert settings.DEFAULT_ENTITIES == expected
+    assert analysis_settings.DEFAULT_ENTITIES == expected
     assert settings.SUPPORTED_PII_ENTITIES_TO_ANONYMIZE == expected
-    assert settings.SUPPORTED_PII_ENTITIES_TO_ANONYMIZE is not settings.DEFAULT_ENTITIES
+    assert settings.SUPPORTED_PII_ENTITIES_TO_ANONYMIZE is not analysis_settings.DEFAULT_ENTITIES
