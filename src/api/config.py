@@ -1,3 +1,4 @@
+import copy
 import logging.config
 import os
 
@@ -98,51 +99,60 @@ class Settings:
 settings: Settings = Settings()
 
 
+# dictConfig applied by setup_logging; it fills in the log file and the
+# console level.
+_LOGGING_TEMPLATE: dict = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "formatters": {
+        "default": {
+            "format": "%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+        },
+    },
+    "handlers": {
+        "file": {
+            "class": "logging.FileHandler",
+            "formatter": "default",
+            "level": "DEBUG",
+        },
+        "stream": {
+            "class": "logging.StreamHandler",
+            "formatter": "default",
+            "stream": "ext://sys.stdout",  # Use stdout with UTF-8 encoding
+        },
+    },
+    "root": {
+        "level": "DEBUG",
+        "handlers": ["file", "stream"],
+    },
+    "loggers": {
+        "python_multipart.multipart": {
+            "level": "WARNING",
+            "handlers": ["file", "stream"],
+            "propagate": False,
+        },
+        # Add other custom loggers to disable here if needed
+    },
+}
+
+
 def setup_logging() -> None:
     """Configureer logging voor de applicatie.
 
     Stelt zowel een file- als streamhandler in, met DEBUG- of INFO-niveau
     afhankelijk van de configuratie. Logt naar 'app.log' en de console.
     """
-    console_log_level = "DEBUG" if settings.DEBUG else "INFO"
     log_dir = os.getenv("LOG_DIR", "logs")
     os.makedirs(log_dir, exist_ok=True)
     logging.config.dictConfig(
-        {
-            "version": 1,
-            "disable_existing_loggers": False,
-            "formatters": {
-                "default": {
-                    "format": "%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-                },
-            },
-            "handlers": {
-                "file": {
-                    "class": "logging.FileHandler",
-                    "formatter": "default",
-                    "level": "DEBUG",
-                    "filename": os.path.join(log_dir, "app.log"),
-                },
-                "stream": {
-                    "class": "logging.StreamHandler",
-                    "formatter": "default",
-                    "level": console_log_level,
-                    "stream": "ext://sys.stdout",  # Use stdout with UTF-8 encoding
-                },
-            },
-            "root": {
-                "level": "DEBUG",
-                "handlers": ["file", "stream"],
-            },
-            "loggers": {
-                "python_multipart.multipart": {
-                    "level": "WARNING",
-                    "handlers": ["file", "stream"],
-                    "propagate": False,
-                },
-                # Add other custom loggers to disable here if needed
-            },
-        }
+        logging_config(log_dir, "DEBUG" if settings.DEBUG else "INFO")
     )
-
     logging.debug("Logging is configured.")
+
+
+def logging_config(log_dir: str, console_log_level: str) -> dict:
+    """Return the logging dictConfig for a log directory and console level."""
+    config = copy.deepcopy(_LOGGING_TEMPLATE)
+    config["handlers"]["file"]["filename"] = os.path.join(log_dir, "app.log")
+    config["handlers"]["stream"]["level"] = console_log_level
+    return config
