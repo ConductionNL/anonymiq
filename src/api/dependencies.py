@@ -50,28 +50,27 @@ def get_user(
         # Fail closed: without a configured password nobody gets in, rather
         # than an empty password matching an empty one.
         logger.error("BASIC_AUTH_PASSWORD is not set; refusing every document request.")
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Incorrect username or password",
-            headers={"WWW-Authenticate": "Basic"},
-        )
-    current_username_bytes = credentials.username.encode("utf8")
-    correct_username_bytes = settings.BASIC_AUTH_USERNAME.encode("utf8")
-    is_correct_username = secrets.compare_digest(
-        current_username_bytes, correct_username_bytes
-    )
-    current_password_bytes = credentials.password.encode("utf8")
-    correct_password_bytes = settings.BASIC_AUTH_PASSWORD.encode("utf8")
-    is_correct_password = secrets.compare_digest(
-        current_password_bytes, correct_password_bytes
-    )
+        raise _unauthorized()
+    # Both are compared every time, so the timing does not reveal which one failed.
+    is_correct_username = _matches(credentials.username, settings.BASIC_AUTH_USERNAME)
+    is_correct_password = _matches(credentials.password, settings.BASIC_AUTH_PASSWORD)
     if not (is_correct_username and is_correct_password):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Incorrect username or password",
-            headers={"WWW-Authenticate": "Basic"},
-        )
+        raise _unauthorized()
     return credentials.username
+
+
+def _matches(given: str, expected: str) -> bool:
+    """Compare two strings in constant time."""
+    return secrets.compare_digest(given.encode("utf8"), expected.encode("utf8"))
+
+
+def _unauthorized() -> HTTPException:
+    """Return the 401 with a Basic challenge."""
+    return HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Incorrect username or password",
+        headers={"WWW-Authenticate": "Basic"},
+    )
 
 
 # Dependency function to get a database session
