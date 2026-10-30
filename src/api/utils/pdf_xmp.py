@@ -58,25 +58,46 @@ class AnalysisAnonymizationResponse:
     status_text: str
 
 
+@dataclass(frozen=True)
+class DeanonymizationFiles:
+    """The uploaded anonymized PDF and the restored copy written next to it.
+
+    Unless ``keep`` is set, both are removed once the response is sent.
+    """
+
+    anon_path: Path
+    deanon_path: Path
+    keep: bool = False
+
+    def remove(self) -> None:
+        """Delete both files when they exist."""
+        for path in (self.anon_path, self.deanon_path):
+            if path.exists():
+                path.unlink()
+
+
 def save_document_and_cleanup(
-    anon_path: Path,
-    deanon_path: Path,
-    doc: pymupdf.Document,
-    keep_temp_files: bool = False,
+    doc: pymupdf.Document, files: DeanonymizationFiles
 ) -> BackgroundTasks:
-    doc.save(str(deanon_path), incremental=False)
+    """Save the restored PDF and return the tasks that remove the temporary files."""
+    doc.save(str(files.deanon_path), incremental=False)
     doc.close()
 
     background = BackgroundTasks()
-    if not keep_temp_files:
-        background.add_task(lambda: anon_path.unlink(missing_ok=True))
-        background.add_task(lambda: deanon_path.unlink(missing_ok=True))
+    if not files.keep:
+        background.add_task(lambda: files.anon_path.unlink(missing_ok=True))
+        background.add_task(lambda: files.deanon_path.unlink(missing_ok=True))
     return background
 
 
 def process_anonymized_pdf_to_deanonymize(
     anon_path: Path, key: str
 ) -> pymupdf.Document:
+    """Return the anonymized PDF with every recorded text written back.
+
+    Raises:
+        ValueError: when the PDF holds no records.
+    """
     hashed_key = hashlib.sha256(key.encode()).digest()
 
     annotations = extract_annotations(str(anon_path), decryption_key=hashed_key)
@@ -88,39 +109,48 @@ def process_anonymized_pdf_to_deanonymize(
         )
 
     doc = pymupdf.open(str(anon_path))
-
     for ann in annotations:
-        if "entity" in ann and "page" in ann and "rect" in ann:
-            page_num = int(ann["page"]) - 1  # Pages are 0-indexed in PyMuPDF
-            if 0 <= page_num < len(doc):
-                page = doc[page_num]
-
-                # Parse the rectangle coordinates
-                rect = ann["rect"]
-                if not isinstance(rect, list):
-                    logging.error(
-                        f"Invalid rectangle format: {rect}. Expected a list of coordinates."
-                    )
-                    continue
-                if len(rect) == 4:
-                    rect = pymupdf.Rect(*rect)
-
-                    original_text = ann["entity"]
-                    page.add_redact_annot(rect, fill=(1, 1, 1), text=original_text)  # type: ignore
-                    page.apply_redactions()  # type: ignore
+        _restore_annotation(doc, ann)
     return doc
 
 
-async def create_temp_paths_and_save(file: UploadFile) -> Tuple[Path, Path]:
-    """Create temporary paths for the uploaded file and save its content.
+def _restore_annotation(doc: pymupdf.Document, ann: dict) -> None:
+    """Write one record's plaintext over its rectangle, if it can be placed."""
+    rect = _annotation_rect(doc, ann)
+    if rect is None:
+        return
+    page = doc[int(ann["page"]) - 1]  # Pages are 0-indexed in PyMuPDF
+    page.add_redact_annot(rect, fill=(1, 1, 1), text=ann["entity"])  # type: ignore
+    page.apply_redactions()  # type: ignore
 
-    Extracted from documents router to keep the code DRY.
+
+def _annotation_rect(doc: pymupdf.Document, ann: dict) -> Optional[pymupdf.Rect]:
+    """Return the record's rectangle, or None when it cannot be placed.
+
+    A record needs ``entity``, ``page`` and ``rect``, a page inside the
+    document and a rectangle of four coordinates.
+    """
+    if not all(field in ann for field in ("entity", "page", "rect")):
+        return None
+    if not 0 <= int(ann["page"]) - 1 < len(doc):
+        return None
+    rect = ann["rect"]
+    if not isinstance(rect, list):
+        logging.error(
+            f"Invalid rectangle format: {rect}. Expected a list of coordinates."
+        )
+        return None
+    return pymupdf.Rect(*rect) if len(rect) == 4 else None
+
+
+async def create_temp_paths_and_save(file: UploadFile) -> DeanonymizationFiles:
+    """Save an uploaded anonymized PDF and pick the path for its restored copy.
 
     Args:
         file (UploadFile): The uploaded file to be processed. (fastapi UploadFile)
 
     Returns:
-        Tuple[Path, Path]: A tuple containing the paths to the anonymized and deanonymized files.
+        DeanonymizationFiles: the saved upload and the path for the restored copy.
     """
     content = await file.read()
     await file.close()
@@ -131,87 +161,105 @@ async def create_temp_paths_and_save(file: UploadFile) -> Tuple[Path, Path]:
     temp_dir.mkdir(parents=True, exist_ok=True)
 
     process_id = uuid.uuid4().hex
-    anon_path = temp_dir / f"{process_id}_anonymized.pdf"
-    deanon_path = temp_dir / f"{process_id}_deanonymized.pdf"
+    files = DeanonymizationFiles(
+        anon_path=temp_dir / f"{process_id}_anonymized.pdf",
+        deanon_path=temp_dir / f"{process_id}_deanonymized.pdf",
+        keep=settings.KEEP_TEMP_FILES,
+    )
+    files.anon_path.write_bytes(content)
+    return files
 
-    with open(anon_path, "wb") as f:
-        f.write(content)
-    return anon_path, deanon_path
+
+@dataclass(frozen=True)
+class UploadTarget:
+    """Where uploaded documents are stored and the tags they get."""
+
+    tags: list[str]
+    db: Session
 
 
 async def upload_and_analyze_files(
-    files: list[UploadFile], tags: Optional[list[str]], db: Session
+    files: list[UploadFile], target: UploadTarget
 ) -> list[DocumentDto]:
     """Upload files, analyze them for PII entities, and store metadata in the database.
 
     Args:
         files (list[UploadFile]): List of files to be uploaded and analyzed.
-        tags (list[str]): List of tags to be associated with the documents.
-        db (Session): Database session for storing document metadata.
+        target (UploadTarget): the tags for every document and the database session.
 
     Returns:
-        _type_: list[DocumentDto]
+        list[DocumentDto]: the stored documents, in upload order.
     """
-    docs: list[DocumentDto] = []
+    return [await _upload_and_analyze(file, target) for file in files]
 
-    for file in files:
+
+async def _upload_and_analyze(file: UploadFile, target: UploadTarget) -> DocumentDto:
+    """Store one upload, its entities and its tags, and describe it."""
+    source = await _AnalyzedSource.of(file)
+    db_document = save(target.db, source.document_row(file))
+    db_tags = [
+        save(
+            target.db,
+            database.Tag(id=uuid.uuid4().hex, name=name, document_id=source.file_id),
+        )
+        for name in target.tags
+    ]
+    db_document._entities = source.entities
+    return source.dto(db_document, db_tags)
+
+
+@dataclass(frozen=True)
+class _AnalyzedSource:
+    """An uploaded PDF saved under a new id, with the entities found in it."""
+
+    file_id: str
+    source_path: Path
+    entities: list[dict]
+    unique: list[dict[str, str]]
+
+    @classmethod
+    async def of(cls, file: UploadFile) -> "_AnalyzedSource":
+        """Save the upload under a new id and analyze its text."""
         content = await file.read()
         await file.close()
-
         file_id = uuid.uuid4().hex
-        from src.api.config import settings
+        source_path = _source_path(file_id)
+        source_path.write_bytes(content)
+        entities, unique = await extract_unique_entities(
+            text=extract_text_from_pdf(source_path)
+        )
+        return cls(file_id, source_path, entities, unique)
 
-        source_dir = Path(settings.DATA_DIR) / "temp/source"
-        source_dir.mkdir(parents=True, exist_ok=True)
-        source_path = source_dir / f"{file_id}.pdf"
-        with open(source_path, "wb") as f:
-            f.write(content)
-
-        text = extract_text_from_pdf(source_path)
-
-        entities, unique = await extract_unique_entities(text=text)
-
-        # Convert entities to JSON string for database storage
-        import json
-
-        entities_json = json.dumps(entities) if entities else None
-
-        db_document = save(
-            db,
-            database.Document(
-                id=file_id,
-                filename=file.filename or f"{file_id}.pdf",
-                content_type=file.content_type or "application/pdf",
-                source_path=str(source_path),
-                anonymized_path=None,
-                pii_entities=entities_json,
-            ),
+    def document_row(self, file: UploadFile) -> database.Document:
+        """Return the database row for this upload."""
+        return database.Document(
+            id=self.file_id,
+            filename=file.filename or f"{self.file_id}.pdf",
+            content_type=file.content_type or "application/pdf",
+            source_path=str(self.source_path),
+            anonymized_path=None,
+            pii_entities=json.dumps(self.entities) if self.entities else None,
         )
 
-        db_tags = [
-            save(
-                db,
-                database.Tag(id=uuid.uuid4().hex, name=tag_name, document_id=file_id),
-            )
-            for tag_name in tags or []
-        ]
-
-        db_document._entities = entities
-
-        stored_tags = [
-            DocumentTagDto(id=str(tag.id), name=str(tag.name)) for tag in db_tags
-        ]
-        doc_meta = DocumentDto(
-            id=file_id,
-            filename=str(db_document.filename),
-            content_type=str(db_document.content_type),
-            uploaded_at=datetime.now(),  # Use current time for response
-            tags=stored_tags,
-            pii_entities=unique,
+    def dto(self, document: database.Document, tags: list[database.Tag]) -> DocumentDto:
+        """Describe the stored upload, with the current time as upload time."""
+        return DocumentDto(
+            id=self.file_id,
+            filename=str(document.filename),
+            content_type=str(document.content_type),
+            uploaded_at=datetime.now(),
+            tags=[DocumentTagDto(id=str(tag.id), name=str(tag.name)) for tag in tags],
+            pii_entities=self.unique,
         )
 
-        docs.append(doc_meta)
-    return docs
+
+def _source_path(file_id: str) -> Path:
+    """Return the path an upload is saved under, creating its directory."""
+    from src.api.config import settings
+
+    source_dir = Path(settings.DATA_DIR) / "temp/source"
+    source_dir.mkdir(parents=True, exist_ok=True)
+    return source_dir / f"{file_id}.pdf"
 
 
 @dataclass(frozen=True)
@@ -592,8 +640,7 @@ def _read_xmp_packet(input_path: str) -> Optional[str]:
         return None
 
     # Remove any byte order mark that might cause issues
-    if xmp_xml.startswith("﻿"):
-        xmp_xml = xmp_xml[1:]
+    xmp_xml = xmp_xml.removeprefix("\ufeff")
 
     safe_preview = "".join(c for c in xmp_xml[:200] if ord(c) < 128)
     logging.debug(f"Raw XMP content preview: {safe_preview}...")
@@ -660,19 +707,21 @@ def retrieve_occurrences_xmp_from_cdata(source: XmpSource) -> List[dict]:
     """
     for pattern in _CDATA_PATTERNS:
         match = re.search(pattern, source.xmp_xml, re.DOTALL)
-        if not match:
-            continue
-        json_blob = match.group(1).strip()
-        try:
-            occurrences = _occurrence_list(json_blob)
-        except json.JSONDecodeError as e:
-            logging.error(f"Failed to parse JSON from pattern match: {e}")
-            logging.debug(f"JSON data preview: {json_blob[:100] or 'empty'}...")
-            continue
+        occurrences = _parsed_cdata(match.group(1).strip()) if match else []
         if occurrences:
             return _decrypt_records(occurrences, source)
     logging.debug("No occurrences found in XMP using CDATA patterns")
     return []
+
+
+def _parsed_cdata(json_blob: str) -> list:
+    """Return the occurrence list of a CDATA blob; broken JSON is logged as none."""
+    try:
+        return _occurrence_list(json_blob)
+    except json.JSONDecodeError as e:
+        logging.error(f"Failed to parse JSON from pattern match: {e}")
+        logging.debug(f"JSON data preview: {json_blob[:100] or 'empty'}...")
+        return []
 
 
 def retrieve_occurrences_from_xmp_attributes(source: XmpSource) -> List[dict]:
@@ -684,22 +733,26 @@ def retrieve_occurrences_from_xmp_attributes(source: XmpSource) -> List[dict]:
     Returns:
         List[dict]: A list of occurrences extracted from the XMP XML.
     """
-    marker = 'custom:AnnotationData="'
-    attr_start = source.xmp_xml.find(marker)
-    if attr_start == -1:
-        return []
-    attr_start += len(marker)
-    attr_end = source.xmp_xml.find('"', attr_start)
-    if attr_end == -1:
+    value = _attribute_value(source.xmp_xml, "custom:AnnotationData")
+    if value is None:
         return []
     try:
-        occurrences = _occurrence_list(
-            saxutils.unescape(source.xmp_xml[attr_start:attr_end])
-        )
+        occurrences = _occurrence_list(saxutils.unescape(value))
     except json.JSONDecodeError as e:
         logging.error(f"Failed to parse JSON from attribute: {e}")
         return []
     return _decrypt_records(occurrences, source)
+
+
+def _attribute_value(xml: str, name: str) -> Optional[str]:
+    """Return the raw value of the first ``name="..."`` attribute, or None."""
+    marker = f'{name}="'
+    start = xml.find(marker)
+    if start == -1:
+        return None
+    start += len(marker)
+    end = xml.find('"', start)
+    return None if end == -1 else xml[start:end]
 
 
 def retrieve_custom_properties_from_xmp(source: XmpSource) -> List[dict]:
@@ -788,34 +841,8 @@ def _decrypt_or_none(ciphertext: str, source: XmpSource) -> Optional[str]:
     return plaintext.decode("utf-8", errors="replace")
 
 
-def _embed_occurrences_xmp(pdf_path: str, occs: List[_Occurrence]) -> None:
-    """Create /Metadata with one <rdf:Description> element per occurrence."""
-    # Convert occurrences to JSON for embedding in CDATA section
-    import json
-
-    # Format the occurrences into a proper dictionary
-    # Make sure to convert all values to standard Python types
-    safe_occs = []
-    for occ in occs:
-        # Create a clean dictionary from the occurrence
-        safe_occ = {
-            "id": str(occ.get("id", "")),
-            "page": int(occ.get("page", 0)),
-            "rect": [float(v) for v in occ.get("rect", (0, 0, 0, 0))],
-            "entity_type": str(occ.get("entity_type", "")),
-            "entity_mask": str(occ.get("entity_mask", "")),
-            "encrypted_entity": str(occ.get("encrypted_entity", "")),
-            "key_fingerprint": str(occ.get("key_fingerprint", "")),
-        }
-        safe_occs.append(safe_occ)
-
-    occurrences_dict = {"occurrences": safe_occs}
-
-    # Convert to JSON string - ensure ASCII encoding to avoid Unicode issues
-    json_blob = json.dumps(occurrences_dict, ensure_ascii=True)
-
-    # Use a standard packet ID as seen in the working example
-    xmp = f"""<?xpacket begin='' id='W5M0MpCehiHzreSzNTczkc9d'?>
+# XMP packet that holds the occurrences as one JSON blob in a CDATA section.
+_XMP_PACKET = """<?xpacket begin='' id='W5M0MpCehiHzreSzNTczkc9d'?>
 <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
          xmlns:custom="http://example.com/custom/">
   <rdf:Description rdf:about="">
@@ -824,24 +851,41 @@ def _embed_occurrences_xmp(pdf_path: str, occs: List[_Occurrence]) -> None:
 </rdf:RDF>
 <?xpacket end='w'?>"""
 
-    # Debug output to help diagnose any issues
-    logging.debug(f"XMP metadata preview (first 200 chars): {xmp[:200]}...")
 
-    # First clear any existing metadata to avoid conflicts
+def _embed_occurrences_xmp(pdf_path: str, occs: List[_Occurrence]) -> None:
+    """Replace the PDF's /Metadata with an XMP packet holding the occurrences.
+
+    A failure is logged, not raised.
+    """
+    # ASCII-only JSON avoids Unicode issues in the packet.
+    json_blob = json.dumps(
+        {"occurrences": [_plain_occurrence(occ) for occ in occs]}, ensure_ascii=True
+    )
+    xmp = _XMP_PACKET.format(json_blob=json_blob)
+    logging.debug(f"XMP metadata preview (first 200 chars): {xmp[:200]}...")
     try:
-        # Try to open and clean up the PDF before adding new metadata
         with pikepdf.Pdf.open(pdf_path, allow_overwriting_input=True) as pdf:
-            # Create a clean XMP metadata object
             pdf.Root.Metadata = pdf.make_stream(xmp.encode("utf-8"))
-            # Save without any additional options
             pdf.save(pdf_path)
             logging.debug(
                 f"Embedded {len(occs)} occurrences in XMP metadata for {pdf_path}"
             )
     except Exception as e:
         logging.error(f"Failed to embed XMP metadata: {e}")
-        # Print the first part of the XMP for debugging
         logging.error(f"XMP content preview: {xmp[:500]}...")
+
+
+def _plain_occurrence(occ: _Occurrence) -> dict:
+    """Return an occurrence with only standard Python types, in a fixed key order."""
+    return {
+        "id": str(occ.get("id", "")),
+        "page": int(occ.get("page", 0)),
+        "rect": [float(v) for v in occ.get("rect", (0, 0, 0, 0))],
+        "entity_type": str(occ.get("entity_type", "")),
+        "entity_mask": str(occ.get("entity_mask", "")),
+        "encrypted_entity": str(occ.get("encrypted_entity", "")),
+        "key_fingerprint": str(occ.get("key_fingerprint", "")),
+    }
 
 
 if __name__ == "__main__":
