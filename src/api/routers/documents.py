@@ -1,4 +1,3 @@
-import json
 import logging
 import os
 import time
@@ -20,10 +19,10 @@ from fastapi import File as FastAPIFile
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
+from src.api.auth import get_user
 from src.api.config import settings
-from src.api.crud import get_document, save
-from src.api.database import AnonymizationEvent, Document
-from src.api.dependencies import get_db, get_user
+from src.api.documents import service
+from src.api.documents.service import get_db
 from src.api.dtos import (
     AddDocumentResponse,
     AddDocumentResponseSuccess,
@@ -32,7 +31,6 @@ from src.api.dtos import (
     DocumentDto,
     DocumentTagDto,
 )
-from src.api.utils import pdf_xmp
 
 logger = logging.getLogger(__name__)
 # Every document route requires HTTP Basic credentials. Documents reach this
@@ -69,11 +67,24 @@ async def upload_document(
     db: Session = Depends(get_db),
 ) -> AddDocumentResponse:
     validate_files_extensions(files)
-    docs = await pdf_xmp.upload_and_analyze_files(
-        files, pdf_xmp.UploadTarget(tags=tags or [], db=db)
+    uploads = await service.store_uploads(
+        files, service.UploadTarget(tags=tags or [], db=db)
     )
 
-    return AddDocumentResponseSuccess(files=docs)
+    return AddDocumentResponseSuccess(files=[_document_dto(u) for u in uploads])
+
+
+def _document_dto(stored: service.StoredUpload) -> DocumentDto:
+    """Describe a stored document, with the current time as upload time."""
+    doc = stored.document
+    return DocumentDto(
+        id=str(doc.id),
+        filename=str(doc.filename),
+        content_type=str(doc.content_type),
+        uploaded_at=datetime.now(),
+        tags=[DocumentTagDto(id=str(t.id), name=str(t.name)) for t in stored.tags],
+        pii_entities=stored.unique_entities,
+    )
 
 
 @dataclass(frozen=True)
@@ -101,7 +112,7 @@ async def deanonymize_document(
     """
     start = time.perf_counter()
     validate_files_extensions([file])
-    temp = await pdf_xmp.create_temp_paths_and_save(file)
+    temp = await service.save_for_restore(file)
     try:
         response = _restored_file_response(temp, file.filename)
     except Exception as exc:
@@ -113,7 +124,7 @@ async def deanonymize_document(
 
 
 def _restored_file_response(
-    temp: pdf_xmp.DeanonymizationFiles, filename: Optional[str]
+    temp: service.DeanonymizationFiles, filename: Optional[str]
 ) -> FileResponse:
     """Serve the restored PDF, cleaning up the temporary files afterwards."""
     return FileResponse(
@@ -124,23 +135,20 @@ def _restored_file_response(
     )
 
 
-def _restore(temp: pdf_xmp.DeanonymizationFiles) -> BackgroundTasks:
+def _restore(temp: service.DeanonymizationFiles) -> BackgroundTasks:
     """Write the restored PDF and return its cleanup.
 
     422 without records, or with a record that does not decrypt or fit.
     """
     try:
-        doc = pdf_xmp.process_anonymized_pdf_to_deanonymize(
-            anon_path=temp.anon_path, key=settings.CRYPTO_KEY.decode()
-        )
+        return service.restore(temp)
     except ValueError as error:
         raise _unrestorable(error)
-    return pdf_xmp.save_document_and_cleanup(doc, temp)
 
 
 def _unrestorable(error: ValueError) -> HTTPException:
     """Log why a PDF cannot be restored and return the 422 to raise."""
-    if isinstance(error, pdf_xmp.UnusableRecordError):
+    if isinstance(error, service.UnusableRecordError):
         logger.error(f"Unusable record during deanonymization: {error}")
         detail = f"The document cannot be restored: {error}"
     else:
@@ -170,69 +178,17 @@ async def get_document_metadata(
 ) -> DocumentDto:
     """Get metadata for a specific document. Same response as upload."""
     doc = _existing_document(request)
-    return DocumentDto(
-        id=str(doc.id),
-        filename=str(doc.filename),
-        content_type=str(doc.content_type),
-        uploaded_at=datetime.now(),  # Use current time as fallback
-        tags=[DocumentTagDto(id=str(tag.id), name=str(tag.name)) for tag in doc.tags],
-        pii_entities=await _unique_entities(doc) if details else [],
-    )
+    entities = await service.unique_entities(doc) if details else []
+    return _document_dto(service.StoredUpload(doc, doc.tags, entities))
 
 
-def _existing_document(request: DocumentRequest) -> Document:
+def _existing_document(request: DocumentRequest) -> service.Document:
     """Return the requested document; 422 for a malformed id, 404 when unknown."""
     file_id_check(request.file_id)
-    doc = get_document(request.db, request.file_id)
+    doc = service.find_document(request.db, request.file_id)
     if not doc:
         raise HTTPException(status_code=404, detail="Document not found")
     return doc
-
-
-async def _unique_entities(doc: Document) -> list[dict[str, str]]:
-    """Return the stored unique entities, or analyse the PDF again without them."""
-    unique_entities = _stored_unique_entities(doc)
-    if unique_entities:
-        return unique_entities
-    try:
-        text = pdf_xmp.extract_text_from_pdf(Path(doc.source_path))
-        _, unique_entities = await pdf_xmp.extract_unique_entities(text=text)
-    except Exception as e:
-        logger.warning(f"Failed to re-analyze document {doc.id}: {e}")
-        return []
-    return unique_entities
-
-
-def _stored_unique_entities(doc: Document) -> list[dict[str, str]]:
-    """Return the distinct (entity_type, text) pairs stored on the document."""
-    if not doc.pii_entities:
-        return []
-    try:
-        return _distinct_entities(json.loads(doc.pii_entities))
-    except (json.JSONDecodeError, KeyError) as e:
-        logger.warning(
-            f"Failed to parse stored PII entities for document {doc.id}: {e}"
-        )
-        return []
-
-
-def _distinct_entities(entities: list[dict]) -> list[dict[str, str]]:
-    """Keep the first of each (entity_type, text) pair that has both values."""
-    unique: dict[tuple[str, str], dict[str, str]] = {}
-    for entity in entities:
-        key = (entity.get("entity_type", ""), entity.get("text", ""))
-        if all(key) and key not in unique:
-            unique[key] = {"entity_type": entity["entity_type"], "text": entity["text"]}
-    return list(unique.values())
-
-
-@dataclass(frozen=True)
-class _AnonymizeRun:
-    """One anonymization of a stored document and how long it took."""
-
-    doc: Document
-    result: pdf_xmp.AnalysisAnonymizationResponse
-    time_ms_taken: int
 
 
 @documents_router.post("/{file_id}/anonymize")
@@ -243,36 +199,27 @@ async def anonymize_document(
     """Anonymize a specific document."""
     start = time.perf_counter()
     doc = _existing_document(request)
-    run = _AnonymizeRun(
+    run = service.AnonymizationRun(
         doc=doc,
         result=_analyze_and_anonymize(doc, request_body),
         time_ms_taken=int((time.perf_counter() - start) * 1000),
     )
-    _record_event(request, run)
-    _raise_when_failed(run.result)
+    service.record_run(request.db, run)
     return _anonymized_response(request, run)
 
 
-def _record_event(request: DocumentRequest, run: _AnonymizeRun) -> None:
-    """Store the outcome of a run as an anonymization event."""
-    save(
-        request.db,
-        AnonymizationEvent(
-            document_id=request.file_id,
-            time_taken=run.time_ms_taken,
-            status=run.result.status_text,
-        ),
-    )
-
-
 def _anonymized_response(
-    request: DocumentRequest, run: _AnonymizeRun
+    request: DocumentRequest, run: service.AnonymizationRun
 ) -> DocumentAnonymizationResponse:
-    """Store the output path of a successful run and describe the run."""
-    run.doc.anonymized_path = str(run.result.output_path)
+    """Describe a successful run; a failed run is a 500 with its status."""
+    if run.failed:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Document anonymization failed: {run.result.status_text}",
+        )
     return DocumentAnonymizationResponse(
         id=request.file_id,
-        filename=str(save(request.db, run.doc).filename),
+        filename=str(run.doc.filename),
         anonymized_at=datetime.now(),  # Use current time for response
         time_taken=run.time_ms_taken,
         status=run.result.status_text,
@@ -281,35 +228,16 @@ def _anonymized_response(
 
 
 def _analyze_and_anonymize(
-    doc: Document, request_body: DocumentAnonymizationRequest
-) -> pdf_xmp.AnalysisAnonymizationResponse:
+    doc: service.Document, request_body: DocumentAnonymizationRequest
+) -> service.AnalysisAnonymizationResponse:
     """Run the anonymization; any error becomes a 500."""
     try:
-        return pdf_xmp.analyze_and_anonymize_document(
-            doc,
-            pdf_xmp.AnonymizationOrder(
-                file_id=str(doc.id),
-                entity_types=request_body.pii_entities_to_anonymize,
-                key=settings.CRYPTO_KEY.decode(),
-            ),
-        )
+        return service.anonymize(doc, request_body.pii_entities_to_anonymize)
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"An unexpected error occurred during document anonymization: {str(e)}",
         )
-
-
-def _raise_when_failed(result: pdf_xmp.AnalysisAnonymizationResponse) -> None:
-    """Remove the output of a failed run and raise a 500 with its status."""
-    if not result.status_text.startswith("failed"):
-        return
-    if os.path.exists(result.output_path):
-        os.unlink(result.output_path)
-    raise HTTPException(
-        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-        detail=f"Document anonymization failed: {result.status_text}",
-    )
 
 
 @documents_router.get("/{file_id}/download")
@@ -334,10 +262,10 @@ async def download_document(
     return FileResponse(path=str(path), filename=path.name, background=background)
 
 
-def _anonymized_document(request: DocumentRequest) -> Document:
+def _anonymized_document(request: DocumentRequest) -> service.Document:
     """Return the requested document; 404 unless it has been anonymized."""
     file_id_check(request.file_id)
-    doc = get_document(request.db, request.file_id)
+    doc = service.find_document(request.db, request.file_id)
     if not doc or not doc.anonymized_path:
         raise HTTPException(status_code=404, detail="Document not anonymized")
     return doc

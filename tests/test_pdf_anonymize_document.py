@@ -7,8 +7,8 @@ from typing import ClassVar
 import pymupdf
 import pytest
 
-from src.api.config import settings
-from src.api.utils import pdf_xmp
+from src.api.documents.settings import document_settings as settings
+from src.api.documents import pdf_xmp
 
 
 class FakeAnalyzer:

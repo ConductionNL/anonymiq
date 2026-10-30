@@ -2,7 +2,7 @@ from typing import Optional, TypeVar
 
 from sqlalchemy.orm import Session
 
-from src.api.database import Base, Document
+from src.api.documents.database import Base, Document
 
 Row = TypeVar("Row", bound=Base)
 

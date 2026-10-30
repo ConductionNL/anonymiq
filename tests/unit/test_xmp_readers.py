@@ -15,8 +15,8 @@ import pikepdf
 import pymupdf
 import pytest
 
-from src.api.utils import pdf_xmp
-from src.api.utils.crypto import aes_gcm_encrypt
+from src.api.documents import pdf_xmp
+from src.api.documents.crypto import aes_gcm_encrypt
 
 KEY = hashlib.sha256(b"secret").digest()
 WRONG_KEY = hashlib.sha256(b"other").digest()

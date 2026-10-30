@@ -8,7 +8,7 @@ one the default is 11.
 import pymupdf
 import pytest
 
-from src.api.utils import pdf_xmp
+from src.api.documents import pdf_xmp
 
 
 def make_pdf(path, *lines: tuple[float, float, str]) -> str:
