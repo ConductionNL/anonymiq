@@ -132,7 +132,7 @@ resources:
 
 Voor productie gebruik:
 
-1. **Authenticatie (verplicht)**: alle routes onder `/api/v1/documents` vragen HTTP Basic. Zonder wachtwoord weigert de service elk documentverzoek met 401; `/api/v1/health`, `/api/v1/analyze` en `/api/v1/anonymize` blijven bereikbaar. Zet de gegevens in een Kubernetes secret en verwijs ernaar met `app.auth.existingSecret`:
+1. **Authenticatie (verplicht)**: alle routes onder `/api/v1/documents` en de tekstroutes `/api/v1/analyze` en `/api/v1/anonymize` vragen HTTP Basic. Zonder wachtwoord weigert de service elk van die verzoeken met 401; alleen `/api/v1/health` blijft zonder inloggen bereikbaar. Open Register stuurt deze gegevens mee zodra je bij een externe OpenAnonymiser een gebruikersnaam en wachtwoord invult. Zet de gegevens in een Kubernetes secret en verwijs ernaar met `app.auth.existingSecret`:
 ```bash
 kubectl -n <namespace> create secret generic anonymiq-basic-auth \
   --from-literal=username=<gebruiker> \

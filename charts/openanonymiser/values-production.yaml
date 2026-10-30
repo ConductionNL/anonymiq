@@ -71,7 +71,7 @@ app:
     # cryptoKey: "SET_VIA_SECRET"
     cryptoKey: "CHANGE-THIS-SECRET-KEY-IN-PRODUCTION"
   auth:
-    # Required: the document routes refuse every request until credentials
+    # Required: the document and text routes refuse every request until credentials
     # are set. Create the Secret out of band, for example:
     #   kubectl -n openanonymiser create secret generic anonymiq-basic-auth \
     #     --from-literal=username=<user> --from-literal=password=<password>

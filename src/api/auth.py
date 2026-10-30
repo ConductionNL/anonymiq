@@ -36,7 +36,9 @@ def get_user(
     if not settings.BASIC_AUTH_PASSWORD:
         # Fail closed: without a configured password nobody gets in, rather
         # than an empty password matching an empty one.
-        logger.error("BASIC_AUTH_PASSWORD is not set; refusing every document request.")
+        logger.error(
+            "BASIC_AUTH_PASSWORD is not set; refusing every authenticated request."
+        )
         raise _unauthorized()
     # Both are compared every time, so the timing does not reveal which one failed.
     is_correct_username = _matches(credentials.username, settings.BASIC_AUTH_USERNAME)
