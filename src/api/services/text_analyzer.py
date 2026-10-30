@@ -69,7 +69,7 @@ class ModularTextAnalyzer:
         logging.debug(f"Analyzing text with {entities=} and {language=}")
 
         # Analyze with NLP engine (supports entity filtering)
-        nlp_results = self.nlp_engine.analyze(text, entities, language)
+        nlp_results = self.nlp_engine.analyze(text, entities)
         print(f"nlp_results: {nlp_results}")
 
         all_results = nlp_results + self._pattern_results(text, language)

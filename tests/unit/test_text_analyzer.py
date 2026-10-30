@@ -27,8 +27,8 @@ class FakeNlp:
         self.results = results
         self.calls: list[tuple] = []
 
-    def analyze(self, text: str, entities: list, language: str) -> list:
-        self.calls.append((text, entities, language))
+    def analyze(self, text: str, entities: list) -> list:
+        self.calls.append((text, entities))
         return list(self.results)
 
 
@@ -72,9 +72,7 @@ EMAIL = {
 def test_nlp_and_pattern_results_are_combined() -> None:
     a = analyzer([PERSON], [EMAIL_HIT])
     assert a.analyze_text(TEXT) == [PERSON, EMAIL]
-    assert a.nlp_engine.calls == [
-        (TEXT, settings.DEFAULT_ENTITIES, settings.DEFAULT_LANGUAGE)
-    ]
+    assert a.nlp_engine.calls == [(TEXT, settings.DEFAULT_ENTITIES)]
     assert a.analyzer.calls == [
         {"text": TEXT, "entities": None, "language": settings.DEFAULT_LANGUAGE}
     ]
@@ -90,7 +88,7 @@ def test_duplicate_spans_of_one_type_are_dropped() -> None:
 def test_requested_entities_filter_the_combined_results() -> None:
     a = analyzer([PERSON], [EMAIL_HIT])
     assert a.analyze_text(TEXT, ["EMAIL"], "en") == [EMAIL]
-    assert a.nlp_engine.calls[0][1:] == (["EMAIL"], "en")
+    assert a.nlp_engine.calls[0][1:] == (["EMAIL"],)
     assert a.analyzer.calls[0]["language"] == "en"
 
 
@@ -109,13 +107,13 @@ def test_a_failing_pattern_analysis_is_skipped() -> None:
 def test_anonymize_replaces_every_entity_with_its_type() -> None:
     a = analyzer([PERSON], [EMAIL_HIT])
     assert a.anonymize_text(TEXT) == "<PERSON> mailt <EMAIL>"
-    assert a.nlp_engine.calls[0][1:] == (None, settings.DEFAULT_LANGUAGE)
+    assert a.nlp_engine.calls[0][1:] == (None,)
 
 
 def test_anonymize_passes_entities_and_language() -> None:
     a = analyzer([PERSON], [EMAIL_HIT])
     assert a.anonymize_text(TEXT, ["PERSON"], "en") == "<PERSON> mailt jan@example.nl"
-    assert a.nlp_engine.calls[0][1:] == (["PERSON"], "en")
+    assert a.nlp_engine.calls[0][1:] == (["PERSON"],)
 
 
 class Recorder:
