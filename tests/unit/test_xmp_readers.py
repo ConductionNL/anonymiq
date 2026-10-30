@@ -174,9 +174,9 @@ def test_a_description_record_without_ciphertext(tmp_path) -> None:
     assert found == [{"id": "ann0"}]
 
 
-def test_a_blob_with_more_keys_than_occurrences_is_not_found(tmp_path) -> None:
-    """Only the JSON search's result is used for a CDATA element, and that
-    search needs the blob to end right after the occurrence list."""
+def test_a_blob_with_more_keys_than_occurrences_is_read(tmp_path) -> None:
+    """The CDATA reader parses the whole blob, so keys after the occurrence
+    list do not hide the occurrences."""
     occ = occurrence("Jan Jansen")
     body = json.dumps({"occurrences": [occ], "version": 1})
     xmp = packet(
@@ -184,7 +184,21 @@ def test_a_blob_with_more_keys_than_occurrences_is_not_found(tmp_path) -> None:
         f"    <custom:AnnotationData><![CDATA[{body}]]></custom:AnnotationData>\n"
         "  </rdf:Description>"
     )
-    assert read(tmp_path, xmp) == []
+    assert read(tmp_path, xmp) == [{**occ, "entity": "Jan Jansen"}]
+
+
+def test_a_cdata_blob_wins_over_a_json_search_elsewhere(tmp_path) -> None:
+    """The CDATA element is read first; a bare JSON blob later in the packet
+    is not used when the element holds occurrences."""
+    first, other = occurrence("Jan Jansen"), occurrence("Piet", "ann1")
+    xmp = packet(
+        '  <rdf:Description rdf:about="">\n'
+        f"    <custom:AnnotationData><![CDATA[{json.dumps({'occurrences': [first], 'v': 1})}]]>"
+        "</custom:AnnotationData>\n"
+        f"    <custom:Other>{blob(other)}</custom:Other>\n"
+        "  </rdf:Description>"
+    )
+    assert read(tmp_path, xmp) == [{**first, "entity": "Jan Jansen"}]
 
 
 def test_an_empty_occurrence_list_is_not_found(tmp_path) -> None:

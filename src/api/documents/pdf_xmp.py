@@ -693,13 +693,12 @@ def try_all_extraction_methods(source: XmpSource) -> List[dict]:
     """Try all available methods to extract occurrences from XMP XML.
 
     The readers run in order of preference and the first non-empty result wins:
+        - AnnotationData element, with or without CDATA,
+          fn: retrieve_occurrences_xmp_from_cdata
         - Attribute-style extraction, fn: retrieve_occurrences_from_xmp_attributes
         - Old format with multiple Description elements,
           fn: retrieve_custom_properties_from_xmp
         - JSON pattern search, fn: retrieve_json_occurrencesfrom_xmp
-
-    The CDATA reader (retrieve_occurrences_xmp_from_cdata) runs first, but its
-    result is not used: the JSON pattern search reads the same CDATA blob.
 
     Args:
         source (XmpSource): the XMP packet and the key to decrypt entities with.
@@ -707,8 +706,7 @@ def try_all_extraction_methods(source: XmpSource) -> List[dict]:
     Returns:
         List[dict]: the occurrences found, or an empty list.
     """
-    retrieve_occurrences_xmp_from_cdata(source)
-    for reader in _FALLBACK_READERS:
+    for reader in _READERS:
         try:
             occurrences = reader(source)
         except Exception as e:
@@ -834,7 +832,8 @@ def retrieve_json_occurrencesfrom_xmp(source: XmpSource) -> List[dict]:
     return _decrypt_records(occurrences, source)
 
 
-_FALLBACK_READERS = (
+_READERS = (
+    retrieve_occurrences_xmp_from_cdata,
     retrieve_occurrences_from_xmp_attributes,
     retrieve_custom_properties_from_xmp,
     retrieve_json_occurrencesfrom_xmp,
