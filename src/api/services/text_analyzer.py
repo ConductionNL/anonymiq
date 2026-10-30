@@ -48,47 +48,7 @@ class ModularTextAnalyzer:
         self.nlp_engine = load_nlp_engine(
             config_dict={"nlp_engine": nlp_engine, "model_name": model_name}
         )
-
-        # Presidio always uses SpaCy for pattern recognizers, regardless of our NLP engine choice
-        spacy_config = {
-            "nlp_engine_name": "spacy",  # Presidio only supports spacy
-            "models": [
-                {
-                    "lang_code": settings.DEFAULT_LANGUAGE,
-                    "model_name": settings.DEFAULT_SPACY_MODEL,  # Always use SpaCy model for Presidio
-                }
-            ],
-        }
-
-        spacy_provider = NlpEngineProvider(nlp_configuration=spacy_config)
-        presidio_spacy_engine = spacy_provider.create_engine()
-
-        # reuse the recognizer registry for the analyzer engine
-        registry = RecognizerRegistry()
-        registry.supported_languages = [settings.DEFAULT_LANGUAGE]
-
-        recognizers_to_add = [
-            DutchPhoneNumberRecognizer(),
-            DutchIBANRecognizer(),
-            DutchBSNRecognizer(),
-            DutchDateRecognizer(),
-            EmailRecognizer(),
-            DutchPassportIdRecognizer(),
-            DutchDriversLicenseRecognizer(),
-            CaseNumberRecognizer(),
-        ]
-        for recognizer in recognizers_to_add:
-            registry.add_recognizer(recognizer=recognizer)
-
-        # Initialiseer de AnalyzerEngine met SpaCy-engine voor pattern recognizers
-        self.analyzer = AnalyzerEngine(
-            nlp_engine=presidio_spacy_engine,
-            registry=registry,
-            supported_languages=registry.supported_languages,
-        )
-        logging.debug(
-            f"ModularTextAnalyzer is initialized with {len(recognizers_to_add)} recognizers, {spacy_config=}"
-        )
+        self.analyzer = _pattern_analyzer()
 
     def analyze_text(
         self,
@@ -112,7 +72,16 @@ class ModularTextAnalyzer:
         nlp_results = self.nlp_engine.analyze(text, entities, language)
         print(f"nlp_results: {nlp_results}")
 
-        # Use pattern recognizers via Presidio AnalyzerEngine (detect ALL patterns first)
+        all_results = nlp_results + self._pattern_results(text, language)
+        if entities and entities != settings.DEFAULT_ENTITIES:
+            all_results = [r for r in all_results if r["entity_type"] in entities]
+        return _distinct_spans(all_results)
+
+    def _pattern_results(self, text: str, language: str) -> list[dict]:
+        """Run every pattern recognizer and return the results as dicts.
+
+        A failing pattern analysis is logged and gives no results.
+        """
         try:
             pattern_results: List[RecognizerResult] = self.analyzer.analyze(
                 text=text,
@@ -122,37 +91,8 @@ class ModularTextAnalyzer:
             print(f"pattern_results: {pattern_results}")
         except Exception as e:
             logging.warning(f"Pattern analysis failed: {e}")
-            pattern_results = []
-
-        # Convert pattern results to dict format
-        pattern_dicts = [
-            {
-                "entity_type": r.entity_type,
-                "start": r.start,
-                "end": r.end,
-                "score": r.score,
-                "text": text[r.start : r.end],
-            }
-            for r in pattern_results
-        ]
-
-        # Combine all results
-        all_results = nlp_results + pattern_dicts
-
-        # Filter by requested entities if specified
-        if entities and entities != settings.DEFAULT_ENTITIES:
-            all_results = [r for r in all_results if r["entity_type"] in entities]
-
-        # Deduplication based on start, end, entity_type
-        seen = set()
-        unique_results = []
-        for r in all_results:
-            key = (r["start"], r["end"], r["entity_type"])
-            if key not in seen:
-                unique_results.append(r)
-                seen.add(key)
-
-        return unique_results
+            return []
+        return [_result_dict(text, r) for r in pattern_results]
 
     def anonymize_text(
         self,
@@ -171,14 +111,84 @@ class ModularTextAnalyzer:
             str: the anonymized text with placeholders for detected entities.
         """
         results = self.analyze_text(text, entities, language)  # type: ignore
+        return _replace_with_types(text, results)
 
-        # Sorteer op start, zodat vervangen van achter naar voren kan
-        sorted_results = sorted(results, key=lambda x: x["start"], reverse=True)
-        anonymized = text
-        for ent in sorted_results:
-            anonymized = (
-                anonymized[: ent["start"]]
-                + f"<{ent['entity_type']}>"
-                + anonymized[ent["end"] :]
-            )
-        return anonymized
+
+# Pattern recognizers registered on presidio's AnalyzerEngine, in this order.
+_RECOGNIZERS = (
+    DutchPhoneNumberRecognizer,
+    DutchIBANRecognizer,
+    DutchBSNRecognizer,
+    DutchDateRecognizer,
+    EmailRecognizer,
+    DutchPassportIdRecognizer,
+    DutchDriversLicenseRecognizer,
+    CaseNumberRecognizer,
+)
+
+
+def _pattern_analyzer() -> AnalyzerEngine:
+    """Return presidio's AnalyzerEngine with the Dutch pattern recognizers.
+
+    Presidio always uses SpaCy for pattern recognizers, regardless of the NLP
+    engine chosen for named entities.
+    """
+    spacy_config = _presidio_spacy_config()
+    registry = _pattern_registry()
+    analyzer = AnalyzerEngine(
+        nlp_engine=NlpEngineProvider(nlp_configuration=spacy_config).create_engine(),
+        registry=registry,
+        supported_languages=registry.supported_languages,
+    )
+    logging.debug(
+        f"ModularTextAnalyzer is initialized with {len(_RECOGNIZERS)} recognizers, {spacy_config=}"
+    )
+    return analyzer
+
+
+def _presidio_spacy_config() -> dict:
+    """Return presidio's NLP configuration: the default spaCy model."""
+    return {
+        "nlp_engine_name": "spacy",  # Presidio only supports spacy
+        "models": [
+            {
+                "lang_code": settings.DEFAULT_LANGUAGE,
+                "model_name": settings.DEFAULT_SPACY_MODEL,
+            }
+        ],
+    }
+
+
+def _pattern_registry() -> RecognizerRegistry:
+    """Return a registry for the default language with every pattern recognizer."""
+    registry = RecognizerRegistry()
+    registry.supported_languages = [settings.DEFAULT_LANGUAGE]
+    for recognizer in _RECOGNIZERS:
+        registry.add_recognizer(recognizer=recognizer())
+    return registry
+
+
+def _result_dict(text: str, result: RecognizerResult) -> dict:
+    """Return a presidio result as a dict with the matched text."""
+    return {
+        "entity_type": result.entity_type,
+        "start": result.start,
+        "end": result.end,
+        "score": result.score,
+        "text": text[result.start : result.end],
+    }
+
+
+def _distinct_spans(results: list[dict]) -> list[dict]:
+    """Keep the first result of each (start, end, entity_type)."""
+    unique: dict[tuple, dict] = {}
+    for r in results:
+        unique.setdefault((r["start"], r["end"], r["entity_type"]), r)
+    return list(unique.values())
+
+
+def _replace_with_types(text: str, results: list[dict]) -> str:
+    """Replace every result's span with ``<ENTITY_TYPE>``, from the back."""
+    for ent in sorted(results, key=lambda x: x["start"], reverse=True):
+        text = text[: ent["start"]] + f"<{ent['entity_type']}>" + text[ent["end"] :]
+    return text
