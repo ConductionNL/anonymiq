@@ -28,33 +28,29 @@ class SpacyEngine(NLPEngine):
                     f"SpaCy model '{model_name}' kon niet worden geladen/geïnstalleerd: {e}"
                 )
 
-    def analyze(
-        self,
-        text: str,
-        entities: Optional[List] = None,
-        language: str = settings.DEFAULT_LANGUAGE,
-    ) -> list:
+    def analyze(self, text: str, entities: Optional[List] = None) -> list:
         """Voer analyse uit op de tekst met behulp van SpaCy.
 
         Args:
             text (str): de tekst die geanalyseerd moet worden.
             entities (list, optional): de entities om terug te geven in de results. Defaults to None.
-            language (str, optional): taal om te analyseren. Defaults to settings.DEFAULT_LANGUAGE.
 
         Returns:
             list: een lijst van dictionaries met de resultaten van de analyse.
         """
-        doc = self.nlp(text)
-        results = []
-        for ent in doc.ents:
-            if entities is None or ent.label_ in entities:
-                results.append(
-                    {
-                        "entity_type": ent.label_,
-                        "start": ent.start_char,
-                        "end": ent.end_char,
-                        "score": "",  # SpaCy geeft geen scores, default lege string
-                        "text": ent.text,
-                    }
-                )
-        return results
+        return [
+            _result(ent)
+            for ent in self.nlp(text).ents
+            if entities is None or ent.label_ in entities
+        ]
+
+
+def _result(ent: spacy.tokens.Span) -> dict:
+    """Return a spaCy entity as a result dict; spaCy gives no score."""
+    return {
+        "entity_type": ent.label_,
+        "start": ent.start_char,
+        "end": ent.end_char,
+        "score": "",
+        "text": ent.text,
+    }

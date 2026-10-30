@@ -1,4 +1,4 @@
-from typing import List, Optional
+from typing import List, Optional, cast
 
 from transformers import pipeline
 
@@ -25,33 +25,37 @@ class TransformersEngine(NLPEngine):
             "ner", model=model_name, aggregation_strategy="simple"
         )
 
-    def analyze(
-        self, text: str, entities: Optional[List] = None, language: str = "nl"
-    ) -> list:
+    def analyze(self, text: str, entities: Optional[List] = None) -> list:
         """Voert NER-analyse uit op de tekst met het gekozen transformers-model.
 
         Args:
             text (str): De tekst om te analyseren.
             entities (list, optional): Lijst van entiteitstypen om te filteren. Defaults to None (alle).
-            language (str, optional): Taalcode (standaard 'nl').
 
         Returns:
             list: Lijst van gevonden entiteiten met type, start, end, score en tekst.
         """
-        results = []
-        for ent in self.ner_pipeline(text):
-            # Mapping van model-labels naar Presidio/standaard labels kan hier uitgebreid worden
-            entity_type = ent.get("entity_group", ent.get("entity", ""))
-            if entities is None or entity_type in entities:
-                results.append(
-                    {
-                        "entity_type": entity_type,
-                        "start": ent["start"],
-                        "end": ent["end"],
-                        "score": ent["score"],
-                        "text": ent["word"]
-                        if "word" in ent
-                        else text[ent["start"] : ent["end"]],
-                    }
-                )
-        return results
+        return [
+            _result(ent, text)
+            for ent in self.ner_pipeline(text)
+            if entities is None or _entity_type(ent) in entities
+        ]
+
+
+def _entity_type(ent: dict) -> str:
+    """Return the entity's group label, else its token label, else ''."""
+    return cast(str, ent.get("entity_group", ent.get("entity", "")))
+
+
+def _result(ent: dict, text: str) -> dict:
+    """Return a pipeline entity as a result dict.
+
+    Mapping van model-labels naar Presidio/standaard labels kan hier uitgebreid worden.
+    """
+    return {
+        "entity_type": _entity_type(ent),
+        "start": ent["start"],
+        "end": ent["end"],
+        "score": ent["score"],
+        "text": ent["word"] if "word" in ent else text[ent["start"] : ent["end"]],
+    }
