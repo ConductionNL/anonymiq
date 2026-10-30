@@ -21,6 +21,13 @@ export default tseslint.config([
     },
   },
   {
+    // Test helpers render small components next to the fixtures they export.
+    files: ['src/__tests__/**/*.tsx'],
+    rules: {
+      'react-refresh/only-export-components': 'off',
+    },
+  },
+  {
     // shadcn/ui primitives export their variant helpers next to the component.
     files: ['src/components/ui/**/*.tsx'],
     rules: {
