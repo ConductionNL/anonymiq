@@ -16,7 +16,7 @@ from fastapi import BackgroundTasks, UploadFile
 from sqlalchemy.orm import Session
 
 from src.api import database
-from src.api.crud import create_document, create_tag
+from src.api.crud import save
 from src.api.dtos import DocumentAnonymizationRequest, DocumentDto, DocumentTagDto
 from src.api.services.text_analyzer import ModularTextAnalyzer
 from src.api.utils.crypto import (
@@ -176,21 +176,25 @@ async def upload_and_analyze_files(
 
         entities_json = json.dumps(entities) if entities else None
 
-        db_document = create_document(
+        db_document = save(
             db,
-            id=file_id,
-            filename=file.filename or f"{file_id}.pdf",
-            content_type=file.content_type or "application/pdf",
-            source_path=str(source_path),
-            anonymized_path=None,
-            pii_entities=entities_json,
+            database.Document(
+                id=file_id,
+                filename=file.filename or f"{file_id}.pdf",
+                content_type=file.content_type or "application/pdf",
+                source_path=str(source_path),
+                anonymized_path=None,
+                pii_entities=entities_json,
+            ),
         )
 
-        db_tags = []
-        for tag_name in tags or []:
-            tag_id = uuid.uuid4().hex
-            tag = create_tag(db, tag_id, tag_name, file_id)
-            db_tags.append(tag)
+        db_tags = [
+            save(
+                db,
+                database.Tag(id=uuid.uuid4().hex, name=tag_name, document_id=file_id),
+            )
+            for tag_name in tags or []
+        ]
 
         db_document._entities = entities
 
