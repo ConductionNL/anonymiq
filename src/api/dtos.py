@@ -3,6 +3,7 @@ from typing import Optional, Union
 
 from pydantic import BaseModel, field_validator
 
+from src.api.analysis.analyzer import analysis_settings
 from src.api.config import settings
 
 
@@ -80,7 +81,7 @@ class _TextRequest(BaseModel):
     """Fields and validation shared by the text analysis requests."""
 
     text: str
-    language: str = settings.DEFAULT_LANGUAGE
+    language: str = analysis_settings.DEFAULT_LANGUAGE
     entities: Optional[list[str]] = None  # Filter specific entity types
     nlp_engine: Optional[str] = None  # Override default engine
 

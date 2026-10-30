@@ -4,6 +4,8 @@ import os
 
 from dotenv import load_dotenv
 
+from src.api.analysis.analyzer import analysis_settings
+
 load_dotenv()
 
 
@@ -27,28 +29,11 @@ def parse_allowed_origins(raw: str | None) -> list[str]:
 class Settings:
     """Applicatieconfiguratie voor de Presidio-NL API.
 
-    Bevat standaardwaarden voor debugmodus, ondersteunde entiteiten, taal,
-    en de te gebruiken NLP-modellen (spaCy of transformers).
+    Bevat standaardwaarden voor debugmodus, CORS, uploads, opslag en toegang.
+    De standaardwaarden van de tekstanalyse staan in ``src.api.analysis.analyzer``.
     """
 
     DEBUG: bool = os.getenv("DEBUG", "true").lower() == "true"
-    DEFAULT_ENTITIES = [
-        "PERSON",
-        "LOCATION",
-        "PHONE_NUMBER",
-        "EMAIL",
-        "ORGANIZATION",
-        "IBAN",
-        "DATE_TIME",
-        "ADDRESS",
-    ]
-
-    DEFAULT_LANGUAGE = os.getenv("DEFAULT_LANGUAGE", "nl")
-    DEFAULT_NLP_ENGINE = os.getenv("DEFAULT_NLP_ENGINE", "spacy").lower()
-    DEFAULT_SPACY_MODEL = os.getenv("DEFAULT_SPACY_MODEL", "nl_core_news_md")
-    DEFAULT_TRANSFORMERS_MODEL = os.getenv(
-        "DEFAULT_TRANSFORMERS_MODEL", "pdelobelle/robbert-v2-dutch-base"
-    )
     # CORS is off unless a deployment names its browser origins. The known
     # machine caller (OpenRegister's analyze call) is server to server and
     # sends no Origin header, so it needs no CORS at all.
@@ -58,7 +43,7 @@ class Settings:
     SUPPORTED_UPLOAD_EXTENSIONS = [
         "pdf",
     ]
-    SUPPORTED_PII_ENTITIES_TO_ANONYMIZE = list(DEFAULT_ENTITIES)
+    SUPPORTED_PII_ENTITIES_TO_ANONYMIZE = list(analysis_settings.DEFAULT_ENTITIES)
     key = os.getenv("CRYPTO_KEY")
     if key:
         CRYPTO_KEY = key.encode("utf-8")

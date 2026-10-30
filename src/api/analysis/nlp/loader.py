@@ -1,7 +1,7 @@
 from typing import Optional, Union, overload
 
-from src.api.utils.nlp.spacy_engine import SpacyEngine
-from src.api.utils.nlp.transformers_engine import NLPEngine, TransformersEngine
+from src.api.analysis.nlp.spacy_engine import SpacyEngine
+from src.api.analysis.nlp.transformers_engine import NLPEngine, TransformersEngine
 
 
 @overload

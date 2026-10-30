@@ -7,7 +7,7 @@ what gets redacted, so a refactor of the recognizers must leave them unchanged.
 import pytest
 from presidio_analyzer import PatternRecognizer
 
-from src.api.utils import patterns as p
+from src.api.analysis import patterns as p
 
 # (recognizer class, entity, default language, [(pattern name, score)])
 EXPECTED = [

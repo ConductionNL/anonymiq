@@ -1,13 +1,13 @@
 """Characterization tests for POST /api/v1/analyze and /api/v1/anonymize.
 
-ModularTextAnalyzer is replaced by a fake, so the routes run without a spaCy
+The text analyzer is replaced by a fake, so the routes run without a spaCy
 model; the tests pin the request handling, the response shape and the errors.
 """
 
 import pytest
 from fastapi.testclient import TestClient
 
-from src.api.config import settings
+from src.api.analysis.analyzer import analysis_settings
 from src.api.routers import text_analysis
 
 TEXT = "Jan Jansen mailt jan@example.nl"
@@ -51,7 +51,7 @@ class FakeAnalyzer:
 @pytest.fixture(autouse=True)
 def fake(monkeypatch: pytest.MonkeyPatch) -> type[FakeAnalyzer]:
     FakeAnalyzer.built, FakeAnalyzer.calls, FakeAnalyzer.fail = [], [], None
-    monkeypatch.setattr(text_analysis, "ModularTextAnalyzer", FakeAnalyzer)
+    monkeypatch.setattr(text_analysis, "text_analyzer", FakeAnalyzer)
     return FakeAnalyzer
 
 
@@ -79,11 +79,11 @@ def test_analyze_with_defaults(client: TestClient, fake: type[FakeAnalyzer]) -> 
     body = response.json()
     assert body["pii_entities"] == EXPECTED_ENTITIES
     assert body["text_length"] == len(TEXT)
-    assert body["nlp_engine_used"] == settings.DEFAULT_NLP_ENGINE
+    assert body["nlp_engine_used"] == analysis_settings.DEFAULT_NLP_ENGINE
     assert isinstance(body["processing_time_ms"], int)
-    assert fake.built == [settings.DEFAULT_NLP_ENGINE]
+    assert fake.built == [analysis_settings.DEFAULT_NLP_ENGINE]
     assert fake.calls == [
-        ("analyze", TEXT, settings.DEFAULT_ENTITIES, settings.DEFAULT_LANGUAGE)
+        ("analyze", TEXT, analysis_settings.DEFAULT_ENTITIES, analysis_settings.DEFAULT_LANGUAGE)
     ]
 
 
@@ -110,10 +110,10 @@ def test_anonymize_with_defaults(client: TestClient, fake: type[FakeAnalyzer]) -
     assert body["anonymized_text"] == "<PERSON> mailt <EMAIL>"
     assert body["entities_found"] == EXPECTED_ENTITIES
     assert body["text_length"] == len(TEXT)
-    assert body["nlp_engine_used"] == settings.DEFAULT_NLP_ENGINE
+    assert body["nlp_engine_used"] == analysis_settings.DEFAULT_NLP_ENGINE
     assert body["anonymization_strategy"] == "replace"
     assert isinstance(body["processing_time_ms"], int)
-    args = (TEXT, settings.DEFAULT_ENTITIES, settings.DEFAULT_LANGUAGE)
+    args = (TEXT, analysis_settings.DEFAULT_ENTITIES, analysis_settings.DEFAULT_LANGUAGE)
     assert fake.calls == [("analyze", *args), ("anonymize", *args)]
 
 

@@ -2,7 +2,7 @@
 
 import pytest
 
-from src.api.utils.patterns import CaseNumberRecognizer
+from src.api.analysis.patterns import CaseNumberRecognizer
 
 EXPECTED_PATTERNS = [
     ("CASE_Z", r"\bZ[-\/]?\d{4}[-\/]?\d{4,6}\b", 0.55),

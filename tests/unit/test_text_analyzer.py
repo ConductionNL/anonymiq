@@ -9,9 +9,9 @@ from dataclasses import dataclass
 
 import pytest
 
-from src.api.config import settings
-from src.api.services import text_analyzer as ta
-from src.api.utils import patterns
+from src.api.analysis.analyzer import analysis_settings as settings
+from src.api.analysis import engine as ta
+from src.api.analysis import patterns
 
 
 @dataclass
@@ -201,3 +201,18 @@ def test_the_presidio_spacy_configuration(
             ],
         }
     ]
+
+
+@pytest.mark.parametrize(
+    ("asked", "engine"),
+    [(None, settings.DEFAULT_NLP_ENGINE), ("", settings.DEFAULT_NLP_ENGINE), ("transformers", "transformers")],
+)
+def test_the_factory_builds_the_engine_asked_for(
+    built: dict, asked: str | None, engine: str
+) -> None:
+    """text_analyzer is the public way in: the asked engine, else the default."""
+    from src.api.analysis.analyzer import text_analyzer
+
+    a = text_analyzer(asked)
+    assert isinstance(a, ta.ModularTextAnalyzer)
+    assert built["config_dict"]["nlp_engine"] == engine

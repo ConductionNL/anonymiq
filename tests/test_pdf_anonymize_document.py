@@ -26,7 +26,7 @@ class FakeAnalyzer:
 def isolated(monkeypatch, tmp_path):
     FakeAnalyzer.calls = []
     FakeAnalyzer.result = []
-    monkeypatch.setattr(pdf_xmp, "ModularTextAnalyzer", FakeAnalyzer)
+    monkeypatch.setattr(pdf_xmp, "text_analyzer", FakeAnalyzer)
     monkeypatch.setattr(settings, "DATA_DIR", str(tmp_path / "data"))
 
 

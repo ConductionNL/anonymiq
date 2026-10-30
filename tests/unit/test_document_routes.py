@@ -44,7 +44,7 @@ class FakeAnalyzer:
 
 @pytest.fixture(autouse=True)
 def fake_analyzer(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(pdf_xmp, "ModularTextAnalyzer", FakeAnalyzer)
+    monkeypatch.setattr(pdf_xmp, "text_analyzer", FakeAnalyzer)
 
 
 def pdf_bytes(text: str) -> bytes:
