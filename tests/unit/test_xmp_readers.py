@@ -209,7 +209,9 @@ def test_round_trip_through_anonymize_pdf(tmp_path) -> None:
     doc.save(str(source))
     doc.close()
     out = str(tmp_path / "out.pdf")
-    pdf_xmp.anonymize_pdf(str(source), out, {"Jan Jansen": "person"}, "secret")
+    pdf_xmp.anonymize_pdf(
+        pdf_xmp.RedactionJob(str(source), out, {"Jan Jansen": "person"}, "secret")
+    )
     found = pdf_xmp.extract_annotations(out, decryption_key=KEY)
     assert [(o["id"], o["entity"], o["entity_type"]) for o in found] == [
         ("ann0", "Jan Jansen", "person")

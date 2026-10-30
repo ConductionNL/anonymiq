@@ -8,7 +8,7 @@ import xml.sax.saxutils as saxutils
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, Iterator, List, Optional, Tuple
 
 import pikepdf
 import pymupdf
@@ -17,7 +17,7 @@ from sqlalchemy.orm import Session
 
 from src.api import database
 from src.api.crud import save
-from src.api.dtos import DocumentAnonymizationRequest, DocumentDto, DocumentTagDto
+from src.api.dtos import DocumentDto, DocumentTagDto
 from src.api.services.text_analyzer import ModularTextAnalyzer
 from src.api.utils.crypto import (
     aes_gcm_decrypt as decrypt_entity,
@@ -214,11 +214,17 @@ async def upload_and_analyze_files(
     return docs
 
 
+@dataclass(frozen=True)
+class AnonymizationOrder:
+    """Which entity types to anonymize in a stored document, and the sealing key."""
+
+    file_id: str
+    entity_types: list[str]
+    key: str
+
+
 def analyze_and_anonymize_document(
-    file_id: str,
-    request_body: DocumentAnonymizationRequest,
-    doc: database.Document,
-    key: str,
+    doc: database.Document, order: AnonymizationOrder
 ) -> AnalysisAnonymizationResponse:
     """Analyze a document and anonymize identified PII entities.
 
@@ -227,38 +233,38 @@ def analyze_and_anonymize_document(
     an anonymized version of the PDF document.
 
     Args:
-        file_id: The unique identifier for the document
-        request_body: Request containing the PII entity types to anonymize
         doc: Database document model containing document information
-        key: Private key used for encrypting PII entities
+        order: the document id, the PII entity types to anonymize and the
+            private key used for encrypting PII entities
 
     Returns:
         AnalysisAnonymizationResponse:
             - selected_entities (list[dict]): Selected PII entities that were anonymized
             - output_path (Path): Path to the anonymized output file
             - status_text (str): Status message describing the result of the operation
-
-    Raises:
-        FileNotFoundError: If the source document cannot be found
-        ValueError: If the anonymization process fails to produce a valid output file
     """
-    analyzer = ModularTextAnalyzer()
-    entities = _document_entities(doc, analyzer)
-    selected = _select_entities(entities, request_body.pii_entities_to_anonymize)
-    mapping = {e["text"]: e["entity_type"].lower() for e in selected}
+    entities = _document_entities(doc, ModularTextAnalyzer())
+    selected = _select_entities(entities, order.entity_types)
+    job = RedactionJob(
+        input_path=doc.source_path,
+        output_path=str(_anonymized_path(order.file_id)),
+        replacements={e["text"]: e["entity_type"].lower() for e in selected},
+        private_key=order.key,
+    )
+    return AnalysisAnonymizationResponse(
+        selected_entities=selected,
+        output_path=Path(job.output_path),
+        status_text=_anonymize_to_output(job),
+    )
 
+
+def _anonymized_path(file_id: str) -> Path:
+    """Return the output path for a document, creating its directory."""
     from src.api.config import settings
 
     anonym_dir = Path(settings.DATA_DIR) / "temp/anonymized"
     anonym_dir.mkdir(parents=True, exist_ok=True)
-    out_path = anonym_dir / f"{file_id}.pdf"
-
-    status_text = _anonymize_to_output(doc.source_path, out_path, mapping, key)
-    return AnalysisAnonymizationResponse(
-        selected_entities=selected,
-        output_path=out_path,
-        status_text=status_text,
-    )
+    return anonym_dir / f"{file_id}.pdf"
 
 
 def _document_entities(
@@ -292,35 +298,44 @@ def _select_entities(entities: list[dict], entity_types: list[str]) -> list[dict
     return selected
 
 
-def _anonymize_to_output(
-    source_path: str, out_path: Path, mapping: dict[str, str], key: str
-) -> str:
+def _anonymize_to_output(job: "RedactionJob") -> str:
     """Write the anonymized PDF and return the status text of the run."""
     try:
-        logger.info(
-            f"Starting anonymization for document {out_path.stem} with {len(mapping)} entities"
-        )
-
-        if not os.path.exists(source_path):
-            raise FileNotFoundError(f"Source file {source_path} not found")
-
-        out_path.parent.mkdir(parents=True, exist_ok=True)
-        occurrences = anonymize_pdf(str(source_path), str(out_path), mapping, key)
-
-        if not os.path.exists(out_path) or os.path.getsize(out_path) == 0:
-            raise ValueError("Anonymization failed to produce valid output file")
-
-        _log_occurrence_count(len(occurrences), len(mapping))
-        return f"success ({len(occurrences)} entities processed)"
-    except FileNotFoundError as exc:
-        logger.error(f"File not found error: {exc}", exc_info=True)
+        return _write_anonymized(job)
+    except Exception as exc:
+        logger.error(_failure_message(exc), exc_info=True)
         return f"failed: {exc}"
-    except ValueError as exc:
-        logger.error(f"Value error during anonymization: {exc}", exc_info=True)
-        return f"failed: {exc}"
-    except Exception as exc:  # pragma: no cover - depends on external libs
-        logger.error(f"Unexpected error during anonymization: {exc}", exc_info=True)
-        return f"failed: {exc}"
+
+
+def _write_anonymized(job: "RedactionJob") -> str:
+    """Run the redaction and check that it produced a file."""
+    out_path = Path(job.output_path)
+    logger.info(
+        f"Starting anonymization for document {out_path.stem} with {len(job.replacements)} entities"
+    )
+    if not os.path.exists(job.input_path):
+        raise FileNotFoundError(f"Source file {job.input_path} not found")
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    occurrences = anonymize_pdf(job)
+    if not os.path.exists(out_path) or os.path.getsize(out_path) == 0:
+        raise ValueError("Anonymization failed to produce valid output file")
+    _log_occurrence_count(len(occurrences), len(job.replacements))
+    return f"success ({len(occurrences)} entities processed)"
+
+
+# Log prefix per expected failure; anything else is unexpected.
+_FAILURE_LABELS: tuple[tuple[type[Exception], str], ...] = (
+    (FileNotFoundError, "File not found error"),
+    (ValueError, "Value error during anonymization"),
+)
+
+
+def _failure_message(exc: Exception) -> str:
+    """Return the log line for a failed anonymization."""
+    for kind, label in _FAILURE_LABELS:
+        if isinstance(exc, kind):
+            return f"{label}: {exc}"
+    return f"Unexpected error during anonymization: {exc}"
 
 
 def _log_occurrence_count(occurrence_count: int, entity_count: int) -> None:
@@ -371,53 +386,56 @@ async def extract_unique_entities(
     return entities, unique
 
 
-def anonymize_pdf(
-    input_path: str,
-    output_path: str,
-    replacements: Dict[str, str],
-    private_key: str,
-    *,
-    entity_masks: Optional[Dict[str, str]] = None,
-    incremental_save: bool = False,
-) -> List[_Occurrence]:
-    """Anonymise *input_path* and write to *output_path*.
+@dataclass(frozen=True)
+class RedactionJob:
+    """One PDF to anonymise: where it is, where the result goes, what to redact.
 
-    Args:
-        input_path (str): Path to the input PDF file.
-        output_path (str): Path to save the anonymised PDF.
-        replacements (Dict[str, str]): Mapping of target text to entity type.
+    Attributes:
+        input_path: Path to the input PDF file.
+        output_path: Path to save the anonymised PDF.
+        replacements: Mapping of target text to entity type.
             E.g. {"Bob": "person", "NL91ABNA": "iban"}.
-        private_key (str): Private key for encrypting PII entities.
-        entity_masks (Optional[Dict[str, str]]): Custom masks for entity types.
-        incremental_save (bool): If True, save changes incrementally to the PDF.
+        private_key: Private key for encrypting PII entities.
+        entity_masks: Custom masks for entity types.
+        incremental_save: If True, save changes incrementally to the PDF.
+    """
+
+    input_path: str
+    output_path: str
+    replacements: Dict[str, str]
+    private_key: str
+    entity_masks: Optional[Dict[str, str]] = None
+    incremental_save: bool = False
+
+    def redactions(self) -> Iterator["_Redaction"]:
+        """Yield one redaction per replacement, with its mask and keys."""
+        hashed_key = hashlib.sha256(self.private_key.encode()).digest()
+        masks = {**_DEFAULT_ENTITY_MASK, **(self.entity_masks or {})}
+        for target, entity_type in self.replacements.items():
+            yield _Redaction(
+                target=target,
+                entity_type=entity_type,
+                mask=masks.get(entity_type, f"[{entity_type.upper()}]"),
+                hashed_key=hashed_key,
+                private_key=self.private_key,
+            )
+
+
+def anonymize_pdf(job: RedactionJob) -> List[_Occurrence]:
+    """Anonymise ``job.input_path`` and write to ``job.output_path``.
 
     Returns:
         List[dict]: List of occurrences with metadata about each redaction.
     """
-    hashed_key = hashlib.sha256(private_key.encode()).digest()
-    masks = {**_DEFAULT_ENTITY_MASK, **(entity_masks or {})}
-
-    doc: pymupdf.Document = pymupdf.open(input_path)
+    doc: pymupdf.Document = pymupdf.open(job.input_path)
     occurrences: List[_Occurrence] = []
-
-    for target, entity_type in replacements.items():
-        redaction = _Redaction(
-            target=target,
-            entity_type=entity_type,
-            mask=masks.get(entity_type, f"[{entity_type.upper()}]"),
-            hashed_key=hashed_key,
-            private_key=private_key,
-        )
-        for page_idx, page in enumerate(doc):  # type: ignore
-            for r in page.search_for(target):
-                occurrences.append(
-                    _record_occurrence(f"ann{len(occurrences)}", page_idx, r, redaction)
-                )
-                _redact_rect(page, page_idx, r, redaction)
-
-    doc.save(output_path, incremental=incremental_save)
-
-    _embed_occurrences_xmp(output_path, occurrences)
+    for redaction in job.redactions():
+        for hit in _hits(doc, redaction.target):
+            record = {"id": f"ann{len(occurrences)}", **_record(hit, redaction)}
+            occurrences.append(record)  # type: ignore[arg-type]
+            _redact_rect(hit, redaction)
+    doc.save(job.output_path, incremental=job.incremental_save)
+    _embed_occurrences_xmp(job.output_path, occurrences)
     return occurrences
 
 
@@ -438,16 +456,30 @@ class _Redaction:
         )
 
 
-def _record_occurrence(
-    occurrence_id: str, page_idx: int, r: pymupdf.Rect, redaction: _Redaction
-) -> _Occurrence:
+@dataclass(frozen=True)
+class _Hit:
+    """One place a target text was found."""
+
+    page: pymupdf.Page  # type: ignore[valid-type]
+    page_idx: int
+    rect: pymupdf.Rect
+
+
+def _hits(doc: pymupdf.Document, target: str) -> Iterator[_Hit]:
+    """Yield every place the target occurs, page by page."""
+    for page_idx, page in enumerate(doc):  # type: ignore
+        for r in page.search_for(target):
+            yield _Hit(page=page, page_idx=page_idx, rect=r)
+
+
+def _record(hit: _Hit, redaction: _Redaction) -> dict:
     """Return the record of one occurrence, with its text encrypted.
 
     It is taken before redaction, so the coordinates refer to the original.
     """
-    occ: _Occurrence = {  # type: ignore
-        "id": occurrence_id,
-        "page": page_idx + 1,
+    r = hit.rect
+    return {
+        "page": hit.page_idx + 1,
         "rect": (r.x0, r.y0, r.x1, r.y1),
         "entity_type": redaction.entity_type,
         "entity_mask": redaction.mask,
@@ -456,77 +488,67 @@ def _record_occurrence(
         ),
         "key_fingerprint": get_fingerprint(data=redaction.private_key),
     }
-    return occ
 
 
-def _redact_rect(
-    page: pymupdf.Page,  # type: ignore
-    page_idx: int,
-    r: pymupdf.Rect,
-    redaction: _Redaction,
-) -> None:
+def _redact_rect(hit: _Hit, redaction: _Redaction) -> None:
     """Redact one rectangle with the mask in the font size found there.
 
     A failed redaction is logged and skipped; its occurrence stays recorded.
     """
-    font_size, font_name = extract_font_details(page_idx=page_idx, page=page, r=r)
+    font_size, font_name = extract_font_details(hit)
+    target = redaction.ascii_target()
     logging.debug(
-        f"Found target target='{redaction.ascii_target()}"
-        f"with font size {str(font_size)} and font name {str(font_name)}"
+        f"Found target target='{target}with font size {font_size} and font name {font_name}"
     )
     try:
-        page.add_redact_annot(  # type: ignore
-            r,
-            fill=(1, 1, 1),
-            text=redaction.mask,
-            fontsize=int(font_size),
+        hit.page.add_redact_annot(  # type: ignore[attr-defined]
+            hit.rect, fill=(1, 1, 1), text=redaction.mask, fontsize=int(font_size)
         )
-        page.apply_redactions()  # type: ignore
+        hit.page.apply_redactions()  # type: ignore[attr-defined]
     except Exception as e:
-        target = redaction.target.encode("utf-8", errors="replace").decode(
-            "ascii", errors="ignore"
-        )
         logging.error(
-            f"Failed to add redaction for target='{target} on page {page_idx + 1}: {e}"
+            f"Failed to add redaction for target='{target} on page {hit.page_idx + 1}: {e}"
         )
         return
-    logging.debug(
-        f"Added redaction for target='{redaction.ascii_target()}' on page {page_idx + 1}."
-    )
+    logging.debug(f"Added redaction for target='{target}' on page {hit.page_idx + 1}.")
 
 
-def extract_font_details(
-    page_idx: int,
-    page: pymupdf.Page,  # type: ignore
-    r: pymupdf.Rect,
-) -> Tuple[int, str]:
-    """Extract font size and name from the text span at the given rectangle.
+def extract_font_details(hit: _Hit) -> Tuple[int, str]:
+    """Extract font size and name from the text span at the hit.
 
-    Args:
-        page_idx (int): page index (0-based) in the document.
-        page (pymupdf.Page): pymupdf Page object to extract text from.
-        r (pymupdf.Rect): pymupdf Rect object representing the area to check.
+    The first intersecting span of each text line is taken, so the last line
+    with one wins. Without any, the defaults are 11 and Helvetica.
 
     Returns:
         Tuple[int, str]: Tuple containing font size and font name.
     """
-    font_size = 11  # Default font size if we can't determine
-    font_name = "Helvetica"
+    font_size, font_name = 11, "Helvetica"
+    for line in _text_lines(hit):
+        span = next(
+            (
+                s
+                for s in line.get("spans", [])
+                if hit.rect.intersects(pymupdf.Rect(s["bbox"]))
+            ),
+            None,
+        )
+        if span is not None:
+            font_size = span.get("size", font_size)
+            font_name = span.get("font", font_name)
+    return font_size, font_name
+
+
+def _text_lines(hit: _Hit) -> list[dict]:
+    """Return the text lines of the hit's page, or none when they cannot be read."""
     try:
-        blocks = page.get_text("dict")["blocks"]  # type: ignore
+        blocks = hit.page.get_text("dict")["blocks"]  # type: ignore[attr-defined]
     except Exception as e:
         if "font" in str(e):
-            logging.warning(f"Could not determine font for page {page_idx + 1}: {e}")
-        blocks = []  # Fallback to empty list if text extraction fails
-    for block in blocks:
-        for line in block.get("lines", []):
-            for span in line.get("spans", []):
-                span_rect = pymupdf.Rect(span["bbox"])
-                if r.intersects(span_rect):
-                    font_size = span.get("size", font_size)
-                    font_name = span.get("font", font_name)
-                    break
-    return font_size, font_name  # For further processing/testing # type: ignore
+            logging.warning(
+                f"Could not determine font for page {hit.page_idx + 1}: {e}"
+            )
+        return []
+    return [line for block in blocks for line in block.get("lines", [])]
 
 
 def extract_annotations(
@@ -852,5 +874,5 @@ if __name__ == "__main__":
         except ValueError:
             parser.error(f"Invalid mapping pair: {pair}")
 
-    anonymize_pdf(args.input, args.output, mapping, args.key)
+    anonymize_pdf(RedactionJob(args.input, args.output, mapping, args.key))
     print("Done. Embedded", len(mapping), "PII item(s).")

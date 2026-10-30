@@ -248,8 +248,8 @@ def test_a_failed_anonymization_records_the_failure(
     meta = upload(client, NAME)
     leftover = Path(settings.DATA_DIR) / "temp/anonymized" / f"{meta['id']}.pdf"
 
-    def failing(source_path, out_path, mapping, key):  # noqa: ANN001, ANN202
-        Path(out_path).write_bytes(b"partial")
+    def failing(job):  # noqa: ANN001, ANN202
+        Path(job.output_path).write_bytes(b"partial")
         raise ValueError("boom")
 
     monkeypatch.setattr(pdf_xmp, "anonymize_pdf", failing)
@@ -266,7 +266,7 @@ def test_an_unexpected_error_is_a_500(
 ) -> None:
     meta = upload(client, NAME)
 
-    def broken(**kwargs):  # noqa: ANN003, ANN202
+    def broken(*args, **kwargs):  # noqa: ANN002, ANN003, ANN202
         raise RuntimeError("kapot")
 
     monkeypatch.setattr(pdf_xmp, "analyze_and_anonymize_document", broken)
@@ -318,7 +318,9 @@ def test_deanonymize_restores_the_redacted_text(client: TestClient, tmp_path) ->
     source, out = tmp_path / "in.pdf", tmp_path / "out.pdf"
     source.write_bytes(pdf_bytes(f"{NAME} belt"))
     pdf_xmp.anonymize_pdf(
-        str(source), str(out), {NAME: "person"}, settings.CRYPTO_KEY.decode()
+        pdf_xmp.RedactionJob(
+            str(source), str(out), {NAME: "person"}, settings.CRYPTO_KEY.decode()
+        )
     )
     response = client.post(
         "/api/v1/documents/deanonymize",
