@@ -57,16 +57,7 @@ class Settings:
     SUPPORTED_UPLOAD_EXTENSIONS = [
         "pdf",
     ]
-    SUPPORTED_PII_ENTITIES_TO_ANONYMIZE = [
-        "PERSON",
-        "LOCATION",
-        "PHONE_NUMBER",
-        "EMAIL",
-        "ORGANIZATION",
-        "IBAN",
-        "DATE_TIME",
-        "ADDRESS",
-    ]
+    SUPPORTED_PII_ENTITIES_TO_ANONYMIZE = list(DEFAULT_ENTITIES)
     key = os.getenv("CRYPTO_KEY")
     if key:
         CRYPTO_KEY = key.encode("utf-8")
