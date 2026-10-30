@@ -6,7 +6,6 @@ import re
 import uuid
 import xml.sax.saxutils as saxutils
 from dataclasses import dataclass
-from datetime import datetime
 from pathlib import Path
 from typing import Dict, Iterator, List, Optional, Tuple
 
@@ -15,19 +14,19 @@ import pymupdf
 from fastapi import BackgroundTasks, UploadFile
 from sqlalchemy.orm import Session
 
-from src.api import database
 from src.api.analysis.analyzer import TextAnalyzer, text_analyzer
-from src.api.crud import save
-from src.api.dtos import DocumentDto, DocumentTagDto
-from src.api.utils.crypto import (
+from src.api.documents import database
+from src.api.documents.crud import save
+from src.api.documents.crypto import (
     aes_gcm_decrypt as decrypt_entity,
 )
-from src.api.utils.crypto import (
+from src.api.documents.crypto import (
     aes_gcm_encrypt as encrypt_entity,
 )
-from src.api.utils.crypto import (
+from src.api.documents.crypto import (
     fingerprint_sha256 as get_fingerprint,
 )
+from src.api.documents.settings import document_settings as settings
 
 _DEFAULT_ENTITY_MASK = {
     "person": "[PERSON]",
@@ -199,8 +198,6 @@ async def create_temp_paths_and_save(file: UploadFile) -> DeanonymizationFiles:
     content = await file.read()
     await file.close()
 
-    from src.api.config import settings
-
     temp_dir = Path(settings.DATA_DIR) / "temp/deanonymized"
     temp_dir.mkdir(parents=True, exist_ok=True)
 
@@ -222,9 +219,18 @@ class UploadTarget:
     db: Session
 
 
+@dataclass(frozen=True)
+class StoredUpload:
+    """A stored document: its row, its tags and its distinct entities."""
+
+    document: database.Document
+    tags: list[database.Tag]
+    unique_entities: list[dict[str, str]]
+
+
 async def upload_and_analyze_files(
     files: list[UploadFile], target: UploadTarget
-) -> list[DocumentDto]:
+) -> list[StoredUpload]:
     """Upload files, analyze them for PII entities, and store metadata in the database.
 
     Args:
@@ -232,12 +238,12 @@ async def upload_and_analyze_files(
         target (UploadTarget): the tags for every document and the database session.
 
     Returns:
-        list[DocumentDto]: the stored documents, in upload order.
+        list[StoredUpload]: the stored documents, in upload order.
     """
     return [await _upload_and_analyze(file, target) for file in files]
 
 
-async def _upload_and_analyze(file: UploadFile, target: UploadTarget) -> DocumentDto:
+async def _upload_and_analyze(file: UploadFile, target: UploadTarget) -> StoredUpload:
     """Store one upload, its entities and its tags, and describe it."""
     source = await _AnalyzedSource.of(file)
     db_document = save(target.db, source.document_row(file))
@@ -249,7 +255,7 @@ async def _upload_and_analyze(file: UploadFile, target: UploadTarget) -> Documen
         for name in target.tags
     ]
     db_document._entities = source.entities
-    return source.dto(db_document, db_tags)
+    return StoredUpload(db_document, db_tags, source.unique)
 
 
 @dataclass(frozen=True)
@@ -285,22 +291,9 @@ class _AnalyzedSource:
             pii_entities=json.dumps(self.entities) if self.entities else None,
         )
 
-    def dto(self, document: database.Document, tags: list[database.Tag]) -> DocumentDto:
-        """Describe the stored upload, with the current time as upload time."""
-        return DocumentDto(
-            id=self.file_id,
-            filename=str(document.filename),
-            content_type=str(document.content_type),
-            uploaded_at=datetime.now(),
-            tags=[DocumentTagDto(id=str(tag.id), name=str(tag.name)) for tag in tags],
-            pii_entities=self.unique,
-        )
-
 
 def _source_path(file_id: str) -> Path:
     """Return the path an upload is saved under, creating its directory."""
-    from src.api.config import settings
-
     source_dir = Path(settings.DATA_DIR) / "temp/source"
     source_dir.mkdir(parents=True, exist_ok=True)
     return source_dir / f"{file_id}.pdf"
@@ -352,8 +345,6 @@ def analyze_and_anonymize_document(
 
 def _anonymized_path(file_id: str) -> Path:
     """Return the output path for a document, creating its directory."""
-    from src.api.config import settings
-
     anonym_dir = Path(settings.DATA_DIR) / "temp/anonymized"
     anonym_dir.mkdir(parents=True, exist_ok=True)
     return anonym_dir / f"{file_id}.pdf"

@@ -14,10 +14,10 @@ import pymupdf
 import pytest
 from fastapi.testclient import TestClient
 
-from src.api.config import settings
-from src.api.database import AnonymizationEvent, Document, Tag
-from src.api.dependencies import SessionLocal
-from src.api.utils import pdf_xmp
+from src.api.documents.settings import document_settings as settings
+from src.api.documents.database import AnonymizationEvent, Document, Tag
+from src.api.documents.session import SessionLocal
+from src.api.documents import pdf_xmp
 from tests.unit.conftest import VALID_AUTH
 
 NAME = "Jan Jansen"

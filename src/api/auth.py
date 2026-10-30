@@ -1,26 +1,13 @@
+"""HTTP Basic authentication for the document routes."""
+
 import logging
-import os
 import secrets
-from typing import Annotated, Generator
+from typing import Annotated
 
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
-from sqlalchemy import create_engine
-from sqlalchemy.orm import (
-    Session,
-    sessionmaker,
-)
 
 from src.api.config import settings
-from src.api.database import Base
-
-# Ensure data directory exists before creating database
-os.makedirs(settings.DATA_DIR, exist_ok=True)
-
-# Define the database engine and session
-engine = create_engine(settings.DATABASE_URL, connect_args={"check_same_thread": False})
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-Base.metadata.create_all(bind=engine, checkfirst=True)
 
 logger = logging.getLogger(__name__)
 
@@ -71,12 +58,3 @@ def _unauthorized() -> HTTPException:
         detail="Incorrect username or password",
         headers={"WWW-Authenticate": "Basic"},
     )
-
-
-# Dependency function to get a database session
-def get_db() -> Generator[Session, None, None]:
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()

@@ -9,8 +9,8 @@ from xml.etree import ElementTree
 import pikepdf
 import pymupdf
 
-from src.api.utils import pdf_xmp
-from src.api.utils.crypto import aes_gcm_decrypt, fingerprint_sha256
+from src.api.documents import pdf_xmp
+from src.api.documents.crypto import aes_gcm_decrypt, fingerprint_sha256
 
 
 def make_pdf(path: Path, *pages: str) -> str:
