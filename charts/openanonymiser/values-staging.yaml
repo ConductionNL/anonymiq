@@ -2,7 +2,7 @@
 replicaCount: 1
 
 image:
-  repository: mwest2020/openanonymiser
+  repository: ghcr.io/conductionnl/anonymiq
   tag: dev  # Always use latest dev tag for staging
   pullPolicy: Always
 
@@ -98,4 +98,4 @@ networkPolicy:
 app:
   env:
     defaultSpacyModel: "nl_core_news_md"
-    defaultTransformersModel: "wietsedv/bert-base-dutch-cased-ner"
+    defaultTransformersModel: "wietsedv/bert-base-dutch-cased-finetuned-conll2002-ner"

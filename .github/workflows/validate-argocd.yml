@@ -2,19 +2,22 @@ name: Validate ArgoCD Applications
 
 on:
   pull_request:
-    branches: [ main, staging ]
+    branches: [ main, staging, development ]
   push:
     branches: [ main, staging ]
+
+permissions:
+  contents: read
 
 jobs:
   validate:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: '3.12'
 
@@ -35,6 +38,7 @@ jobs:
           prod = load(root / 'production-app.yaml')
 
           errors = []
+          IMAGE_REPOSITORY = 'ghcr.io/conductionnl/anonymiq'
 
           # Staging expectations
           try:
@@ -73,6 +77,8 @@ jobs:
           try:
               vals_prod = load(charts / 'values.yaml')
               image_tag_prod = vals_prod.get('image', {}).get('tag')
+              if vals_prod.get('image', {}).get('repository') != IMAGE_REPOSITORY:
+                  errors.append(f'values.yaml: image.repository must be {IMAGE_REPOSITORY}')
               if image_tag_prod not in ('main', 'latest'):
                   errors.append(f'values.yaml: image.tag should be "main" or "latest", found "{image_tag_prod}"')
               # Prod ingress host and tls
@@ -88,6 +94,8 @@ jobs:
           try:
               vals_stg = load(charts / 'values-staging.yaml')
               image_tag_stg = vals_stg.get('image', {}).get('tag')
+              if vals_stg.get('image', {}).get('repository') != IMAGE_REPOSITORY:
+                  errors.append(f'values-staging.yaml: image.repository must be {IMAGE_REPOSITORY}')
               if image_tag_stg != 'dev':
                   errors.append(f'values-staging.yaml: image.tag should be "dev", found "{image_tag_stg}"')
               pull_policy_stg = vals_stg.get('image', {}).get('pullPolicy')

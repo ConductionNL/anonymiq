@@ -1,203 +1,124 @@
 name: Deploy to Production
 
+# Production is released from a version tag only. A merge to main builds and
+# scans the image (docker-build.yml) but publishes nothing. Pushing a tag
+# vX.Y.Z runs the full CI, builds the image, scans it, and only then pushes
+# :vX.Y.Z, :latest and :main, which Argo CD rolls out from the main branch.
 on:
   push:
-    branches: [ main ]
     tags:
       - 'v*.*.*'
-  workflow_dispatch:
-    inputs:
-      version:
-        description: 'Version tag (e.g., v1.2.0)'
-        required: true
-        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
 
 env:
-  REGISTRY: docker.io
-  IMAGE_NAME: mwest2020/openanonymiser
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ghcr.io/conductionnl/anonymiq
 
 jobs:
-  test:
-    name: Full Test Suite
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v4
-        with:
-          python-version: '3.12'
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@v3
-        with:
-          version: "latest"
-
-      - name: Install dependencies
-        # Locked versions, minus torch, its CUDA wheels and the spaCy model:
-        # the unit tests run the app in process and load neither.
-        run: |
-          SKIP=$(grep -oE '^name = "(torch|triton|nvidia-[a-z0-9-]+|nl-core-news-lg)"' uv.lock \
-            | sed -E 's/name = "(.*)"/--no-install-package \1/')
-          uv sync --frozen --python 3.12 $SKIP
-
-      - name: Run unit tests
-        # scripts/run_tests.py is a local helper (it starts a server, builds
-        # Docker and pushes tags); CI runs pytest directly.
-        run: uv run --frozen --no-sync python -m pytest tests/unit -v -p no:cacheprovider
+  ci:
+    name: CI
+    uses: ./.github/workflows/ci.yml
 
   build-and-deploy:
-    name: Build Production Image
-    needs: test
+    name: Build, scan and push production image
+    needs: ci
     runs-on: ubuntu-latest
-    
+    permissions:
+      contents: write
+      packages: write
     outputs:
       version: ${{ steps.version.outputs.version }}
-      image_tag: ${{ steps.version.outputs.image_tag }}
-    
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Determine version
         id: version
         run: |
-          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
-            VERSION="${{ github.event.inputs.version }}"
-          elif [[ "${{ github.ref }}" == refs/tags/* ]]; then
-            VERSION=${GITHUB_REF#refs/tags/}
-          else
-            # Main branch push - use latest git tag or fallback to commit
-            VERSION=$(git describe --tags --abbrev=0 2>/dev/null || echo "v1.2.0")
-          fi
-          
-          echo "version=${VERSION}" >> $GITHUB_OUTPUT
-          echo "image_tag=${VERSION}" >> $GITHUB_OUTPUT
-          echo "📦 Production version: ${VERSION}" >> $GITHUB_STEP_SUMMARY
+          VERSION="${GITHUB_REF#refs/tags/}"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "Production version: ${VERSION}" >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+      # The image carries torch and two NLP models; the hosted runner needs
+      # the space to hold it twice (build cache and the loaded image).
+      - name: Free disk space
+        run: sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
 
-      - name: Log in to Docker Hub
-        uses: docker/login-action@v3
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - name: Build image for scanning
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
-          username: ${{ secrets.DOCKER_USERNAME }}
-          password: ${{ secrets.DOCKER_PASSWORD }}
+          context: .
+          load: true
+          tags: ${{ env.IMAGE_NAME }}:scan
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
 
-      - name: Build and push production image
-        uses: docker/build-push-action@v5
+      - name: Trivy image scan
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: ${{ env.IMAGE_NAME }}:scan
+          scanners: vuln
+          ignore-unfixed: true
+          severity: CRITICAL
+          exit-code: '1'
+          format: table
+
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Push production image
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
           push: true
+          labels: org.opencontainers.image.source=https://github.com/ConductionNL/anonymiq
           tags: |
             ${{ env.IMAGE_NAME }}:${{ steps.version.outputs.version }}
             ${{ env.IMAGE_NAME }}:latest
+            ${{ env.IMAGE_NAME }}:main
           cache-from: type=gha
-          cache-to: type=gha,mode=max
 
       - name: Deployment summary
         run: |
           VERSION="${{ steps.version.outputs.version }}"
-          echo "🚀 Docker images built and pushed:" >> $GITHUB_STEP_SUMMARY
-          echo "- \`${{ env.IMAGE_NAME }}:${VERSION}\`" >> $GITHUB_STEP_SUMMARY  
-          echo "- \`${{ env.IMAGE_NAME }}:latest\`" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "🎯 ArgoCD will automatically deploy this version to production" >> $GITHUB_STEP_SUMMARY
-          echo "📊 Monitor deployment: https://argocd.commonground.nu" >> $GITHUB_STEP_SUMMARY
+          {
+            echo "Images pushed:"
+            echo "- \`${IMAGE_NAME}:${VERSION}\`"
+            echo "- \`${IMAGE_NAME}:latest\`"
+            echo "- \`${IMAGE_NAME}:main\`"
+            echo ""
+            echo "Argo CD deploys this version to production: https://argocd.commonground.nu"
+          } >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Create GitHub Release
-        if: startsWith(github.ref, 'refs/tags/')
-        uses: actions/create-release@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
         with:
           tag_name: ${{ steps.version.outputs.version }}
-          release_name: Release ${{ steps.version.outputs.version }}
+          name: Release ${{ steps.version.outputs.version }}
+          generate_release_notes: true
           body: |
-            ## 🚀 Anonymiq ${{ steps.version.outputs.version }}
-            
-            ### ✨ Features
-            - **POST /api/v1/analyze** - String-based PII analysis with confidence scores
-            - **POST /api/v1/anonymize** - Text anonymization with multiple strategies
-            - **Enhanced test coverage** - Comprehensive automated testing
-            - **Auto-tagging workflow** - GitOps deployment automation
-            
-            ### 🔧 Technical Details
-            - **Docker Image:** `${{ env.IMAGE_NAME }}:${{ steps.version.outputs.version }}`
-            - **SSL:** Enabled with Let's Encrypt
-            - **Health Check:** `https://api.openanonymiser.commonground.nu/api/v1/health`
-            - **Documentation:** `https://api.openanonymiser.commonground.nu/api/v1/docs`
-            
-            ### 🧪 Testing
-            ```bash
-            python test_endpoints.py https://api.openanonymiser.commonground.nu
-            ```
-            
-            ### 📊 Test Results
-            - ✅ Local tests: PASSED
-            - ✅ Docker tests: PASSED  
-            - ✅ Cloud API tests: PASSED
-          draft: false
-          prerelease: false
+            Docker image: `${{ env.IMAGE_NAME }}:${{ steps.version.outputs.version }}`
+            Health check: https://api.openanonymiser.commonground.nu/api/v1/health
 
+  # The API routes require HTTP Basic, which this job has no credentials for,
+  # so the smoke test checks the public health route.
   test-production:
-    name: Test Production Deployment
+    name: Test production deployment
     needs: build-and-deploy
     runs-on: ubuntu-latest
-    
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - name: Wait for Argo CD to sync
+        run: sleep 300
 
-      - name: Set up Python
-        uses: actions/setup-python@v4
-        with:
-          python-version: '3.12'
-
-      - name: Install requests
-        run: pip install requests
-
-      - name: Wait for production deployment
-        run: |
-          echo "⏳ Waiting for ArgoCD sync and production deployment..."
-          sleep 300  # Wait 5 minutes for production deployment
-
-      - name: Test production API
-        run: |
-          echo "🧪 Testing production API endpoints..."
-          python test_endpoints.py https://api.openanonymiser.commonground.nu
-
-      - name: Test SSL certificate
-        run: |
-          echo "🔒 Testing SSL certificate..."
-          curl -I https://api.openanonymiser.commonground.nu/api/v1/health
-          
-          # Check SSL grade
-          echo "📊 SSL Security Check:"
-          curl -s "https://api.ssllabs.com/api/v3/analyze?host=api.openanonymiser.commonground.nu&publish=off&startNew=on&all=done&ignoreMismatch=on" | jq -r '.endpoints[0].grade // "Pending"'
-
-      - name: Create production test report
-        if: always()
-        run: |
-          echo "## 🎉 Production Deployment Complete!" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Version:** ${{ needs.build-and-deploy.outputs.version }}" >> $GITHUB_STEP_SUMMARY
-          echo "**Image:** ${{ env.IMAGE_NAME }}:${{ needs.build-and-deploy.outputs.image_tag }}" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### 🌐 Live Endpoints:" >> $GITHUB_STEP_SUMMARY
-          echo "- **API Health:** https://api.openanonymiser.commonground.nu/api/v1/health" >> $GITHUB_STEP_SUMMARY
-          echo "- **Swagger Docs:** https://api.openanonymiser.commonground.nu/api/v1/docs" >> $GITHUB_STEP_SUMMARY
-          echo "- **PII Analysis:** POST https://api.openanonymiser.commonground.nu/api/v1/analyze" >> $GITHUB_STEP_SUMMARY
-          echo "- **Text Anonymization:** POST https://api.openanonymiser.commonground.nu/api/v1/anonymize" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### 🔒 Security:" >> $GITHUB_STEP_SUMMARY
-          echo "- ✅ SSL/TLS enabled" >> $GITHUB_STEP_SUMMARY
-          echo "- ✅ Let's Encrypt certificate" >> $GITHUB_STEP_SUMMARY
-          echo "- ✅ HTTPS redirect enabled" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          if [ $? -eq 0 ]; then
-            echo "🎊 **ALL PRODUCTION TESTS PASSED!**" >> $GITHUB_STEP_SUMMARY
-          else
-            echo "⚠️ **Some production tests failed**" >> $GITHUB_STEP_SUMMARY
-          fi
+      - name: Health check over TLS
+        run: curl -fsS --retry 5 --retry-delay 30 https://api.openanonymiser.commonground.nu/api/v1/health

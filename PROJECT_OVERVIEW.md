@@ -5,7 +5,7 @@ Anonymiq is een API voor detectie en anonimisering van PII in Nederlandse tekst 
 
 ## Architectuur (kort)
 - Endpoints (prefix `/api/v1`): `GET /health`, `POST /analyze`, `POST /anonymize`, documenten: `POST /documents/upload`, `GET /documents/{id}/metadata`, `POST /documents/{id}/anonymize`, `GET /documents/{id}/download`.
-- Kernbestanden: `src/api/main.py`, routers (`src/api/routers/*`), services (`src/api/services/text_analyzer.py`), utils (`src/api/utils/*`), DTO’s (`src/api/dtos.py`), DI/DB (`src/api/dependencies.py`, `src/api/database.py`).
+- Kernbestanden: `src/api/main.py`, routes (`src/api/routes.py`, `src/api/document_routes.py`, `src/api/text_routes.py`), DTO’s (`src/api/dtos.py`), auth (`src/api/auth.py`); tekstanalyse in `src/api/analysis/` (publiek: `analyzer.py`); documenten, PDF en database in `src/api/documents/` (publiek: `service.py`). Zie `ARCHITECTURE.md`.
 - Helm chart: `charts/openanonymiser/**` (deployment/ingress/values).
 
 ## NLP & entiteiten

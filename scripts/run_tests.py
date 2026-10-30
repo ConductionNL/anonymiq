@@ -454,7 +454,7 @@ class TestRunner:
                     # so printing the new name would hand them a `kubectl` that
                     # fails with NotFound — or, worse, silently targets nothing.
                     # These move with the chart, not with this rename.
-                    self.log("💡 Deploy with: kubectl set image deployment/openanonymiser openanonymiser=mwest2020/openanonymiser:dev")
+                    self.log("💡 Deploy with: kubectl set image deployment/openanonymiser openanonymiser=ghcr.io/conductionnl/anonymiq:dev")
                 else:
                     self.log(f"⚠️ Failed to push dev tag: {push_result.stderr}", "WARNING")
             else:

@@ -1,21 +1,11 @@
 # 🚀 Staging/Accept Deployment Guide
 
-## ✅ STAP 1: DOCKER IMAGES (COMPLETED!)
+## STAP 1: DOCKER IMAGES
 
-```bash
-# ✅ DONE: Images gebouwd en gepusht
-docker build -t mwest2020/openanonymiser:v1.1.0 .
-docker tag mwest2020/openanonymiser:v1.1.0 mwest2020/openanonymiser:latest
-docker tag mwest2020/openanonymiser:v1.1.0 mwest2020/openanonymiser:dev
-docker push mwest2020/openanonymiser:v1.1.0
-docker push mwest2020/openanonymiser:latest
-docker push mwest2020/openanonymiser:dev
-```
+De images worden door GitHub Actions gebouwd en naar `ghcr.io/conductionnl/anonymiq` gepusht (zie `DEPLOYMENT.md`):
 
-**Images Available:**
-- ✅ `mwest2020/openanonymiser:v1.1.0` → Production
-- ✅ `mwest2020/openanonymiser:latest` → Production alias
-- ✅ `mwest2020/openanonymiser:dev` → Staging
+- `ghcr.io/conductionnl/anonymiq:dev`: staging, bij elke push naar `staging` of `development`
+- `ghcr.io/conductionnl/anonymiq:vX.Y.Z`, `:main` en `:latest`: productie, bij een versietag
 
 ## 📋 STAP 2: DNS CONFIGURATIE
 

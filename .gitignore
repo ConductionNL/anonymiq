@@ -20,8 +20,8 @@ dist/
 downloads/
 eggs/
 .eggs/
-lib/
-lib64/
+/lib/
+/lib64/
 parts/
 sdist/
 var/
@@ -88,3 +88,6 @@ Thumbs.db
 *-prod.yaml
 *-accept.yaml
 *cluster*.yaml \ntest_results.json\n
+
+# Runtime upload and output directory; the API creates it on demand.
+/data/temp/

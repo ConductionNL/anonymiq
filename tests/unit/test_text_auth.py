@@ -12,7 +12,8 @@ from fastapi.routing import APIRoute
 from fastapi.testclient import TestClient
 
 from src.api.main import app
-from src.api.routers import text_analysis
+from src.api.routes import router as api_router
+from src.api import text_routes as text_analysis
 from tests.unit.conftest import VALID_AUTH
 
 TEXT = "Jan de Vries woont in Utrecht."
@@ -24,7 +25,7 @@ ROUTE_IDS = [path for _, path, _ in TEXT_ROUTES]
 
 
 class StubAnalyzer:
-    """Stands in for ModularTextAnalyzer so no model has to load."""
+    """Stands in for the text analyzer so no model has to load."""
 
     def __init__(self, nlp_engine: str | None = None) -> None:
         """Accept the engine name the handler passes."""
@@ -50,17 +51,16 @@ class StubAnalyzer:
 @pytest.fixture(autouse=True)
 def stub_analyzer(monkeypatch: pytest.MonkeyPatch) -> None:
     """Swap the NLP engine for the stub in the text router."""
-    monkeypatch.setattr(text_analysis, "ModularTextAnalyzer", StubAnalyzer)
+    monkeypatch.setattr(text_analysis, "text_analyzer", StubAnalyzer)
 
 
 def test_the_table_covers_every_text_route() -> None:
     """A text route added later must be added to this table too."""
     text_paths = {"/api/v1/analyze", "/api/v1/anonymize"}
     registered = {
-        (method, route.path)
-        for route in app.routes
+        (method, api_router.prefix + route.path)
+        for route in text_analysis.text_analysis_router.routes
         if isinstance(route, APIRoute)
-        and route.endpoint.__module__ == text_analysis.__name__
         for method in route.methods
     }
     assert registered == {(m, p) for m, p, _ in TEXT_ROUTES}
