@@ -6,8 +6,10 @@ routes run end to end on real PDFs without a spaCy model or torch.
 
 import json
 import uuid
+import xml.sax.saxutils as saxutils
 from pathlib import Path
 
+import pikepdf
 import pymupdf
 import pytest
 from fastapi.testclient import TestClient
@@ -347,3 +349,81 @@ def test_deanonymize_without_metadata_is_a_422(client: TestClient) -> None:
     )
     temp = Path(settings.DATA_DIR) / "temp/deanonymized"
     assert list(temp.glob("*")) == []
+
+
+def anonymized_pdf(tmp_path: Path, key: str) -> Path:
+    """Anonymize a one-line PDF holding NAME and return the output path."""
+    source, out = tmp_path / "in.pdf", tmp_path / "out.pdf"
+    source.write_bytes(pdf_bytes(f"{NAME} belt"))
+    pdf_xmp.anonymize_pdf(
+        pdf_xmp.RedactionJob(str(source), str(out), {NAME: "person"}, key)
+    )
+    return out
+
+
+def as_description_layout(path: Path) -> None:
+    """Rewrite the PDF's records into the older one-Description-per-record layout.
+
+    Every value is stored as an attribute string, so ``page`` and ``rect``
+    come back as strings.
+    """
+    records = pdf_xmp.extract_annotations(str(path))
+    rows = []
+    for rec in records:
+        attrs = " ".join(
+            f'custom:{k}="{saxutils.escape(json.dumps(v) if isinstance(v, list) else str(v), {chr(34): "&quot;"})}"'
+            for k, v in rec.items()
+        )
+        rows.append(f'<rdf:Description rdf:about="" {attrs}/>')
+    xmp = (
+        "<?xpacket begin='' id='W5M0MpCehiHzreSzNTczkc9d'?>\n"
+        '<rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#" '
+        'xmlns:custom="http://example.com/custom/">'
+        + "".join(rows)
+        + "</rdf:RDF>\n<?xpacket end='w'?>"
+    )
+    with pikepdf.Pdf.open(path, allow_overwriting_input=True) as pdf:
+        pdf.Root.Metadata = pdf.make_stream(xmp.encode())
+        pdf.save(path)
+
+
+def deanonymize(client: TestClient, path: Path):
+    return client.post(
+        "/api/v1/documents/deanonymize",
+        auth=VALID_AUTH,
+        files={"file": ("anon.pdf", path.read_bytes(), "application/pdf")},
+    )
+
+
+def test_deanonymize_restores_the_description_layout(
+    client: TestClient, tmp_path
+) -> None:
+    """Records whose rect is stored as a JSON string are placed too."""
+    out = anonymized_pdf(tmp_path, settings.CRYPTO_KEY.decode())
+    as_description_layout(out)
+    response = deanonymize(client, out)
+    assert response.status_code == 200, response.text
+    restored = pymupdf.open(stream=response.content, filetype="pdf")
+    assert NAME in restored[0].get_text()
+
+
+def test_deanonymize_with_another_key_is_a_422(client: TestClient, tmp_path) -> None:
+    """A document sealed with another key is refused, not returned unchanged."""
+    response = deanonymize(client, anonymized_pdf(tmp_path, "another key"))
+    assert response.status_code == 422
+    assert "does not decrypt" in response.json()["detail"]
+    temp = Path(settings.DATA_DIR) / "temp/deanonymized"
+    assert list(temp.glob("*")) == []
+
+
+def test_deanonymize_with_an_unplaceable_record_is_a_422(
+    client: TestClient, tmp_path
+) -> None:
+    """A record that cannot be placed is refused, not skipped."""
+    out = anonymized_pdf(tmp_path, settings.CRYPTO_KEY.decode())
+    xmp_record = pdf_xmp.extract_annotations(str(out))[0]
+    xmp_record["page"] = 7
+    pdf_xmp._embed_occurrences_xmp(str(out), [pdf_xmp._Occurrence(xmp_record)])
+    response = deanonymize(client, out)
+    assert response.status_code == 422
+    assert "ann0" in response.json()["detail"]

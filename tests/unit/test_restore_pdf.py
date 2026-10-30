@@ -1,7 +1,7 @@
 """Characterization tests for restoring redacted text from the XMP records.
 
 ``process_anonymized_pdf_to_deanonymize`` writes each record's plaintext back
-over its rectangle; records it cannot place are skipped.
+over its rectangle; a record it cannot place or decrypt is refused.
 """
 
 import hashlib
@@ -73,38 +73,60 @@ def test_a_record_on_page_two(tmp_path) -> None:
 
 
 @pytest.mark.parametrize(
+    "rect",
+    [
+        "[72.0, 60.0, 200.0, 80.0]",
+        "72,60,200,80",
+        (72, 60, 200, 80),
+    ],
+    ids=["json-string", "comma-string", "tuple"],
+)
+def test_a_rect_in_another_form_is_placed(tmp_path, rect: object) -> None:
+    [text] = restored_text(tmp_path, record("Jan Jansen", rect=rect))
+    assert "Jan Jansen" in text
+
+
+@pytest.mark.parametrize(
     "bad",
     [
         {"page": 0},
         {"page": 3},
-        {"rect": "72,60,200,80"},
+        {"page": "een"},
+        {"rect": "72,60,200"},
         {"rect": [72.0, 60.0, 200.0]},
+        {"rect": "geen getallen"},
+        {"rect": 72},
     ],
-    ids=["page-zero", "page-past-end", "rect-not-a-list", "rect-of-three"],
+    ids=[
+        "page-zero",
+        "page-past-end",
+        "page-not-a-number",
+        "rect-string-of-three",
+        "rect-of-three",
+        "rect-not-numbers",
+        "rect-a-number",
+    ],
 )
-def test_records_that_cannot_be_placed_are_skipped(tmp_path, bad: dict) -> None:
+def test_a_record_that_cannot_be_placed_is_refused(tmp_path, bad: dict) -> None:
     rec = record("Jan Jansen", page=bad.get("page", 1), rect=bad.get("rect"))
     good = dict(record("Piet"), id="ann1")
-    texts = restored_text(tmp_path, rec, good, pages=2)
-    assert "Jan Jansen" not in "".join(texts)
-    assert "Piet" in texts[0]
+    with pytest.raises(pdf_xmp.UnusableRecordError, match="ann0"):
+        restored_text(tmp_path, good, rec, pages=2)
 
 
-def test_a_record_without_a_field_is_skipped(tmp_path) -> None:
+def test_a_record_without_a_field_is_refused(tmp_path) -> None:
     rec = record("Jan Jansen")
     del rec["rect"]
-    assert "Jan Jansen" not in restored_text(tmp_path, rec)[0]
+    with pytest.raises(pdf_xmp.UnusableRecordError, match="ann0.*rect"):
+        restored_text(tmp_path, rec)
 
 
-def test_a_wrong_key_restores_nothing(tmp_path) -> None:
-    """An undecryptable record still gets a blank redaction, with no text."""
-    doc = pdf_xmp.process_anonymized_pdf_to_deanonymize(
-        pdf_with_records(tmp_path, record("Jan Jansen")), "other"
-    )
-    text = doc[0].get_text()
-    doc.close()
-    assert "Jan Jansen" not in text
-    assert "vaste tekst" in text
+def test_a_wrong_key_is_refused(tmp_path) -> None:
+    """A record that does not decrypt is an error, not a blank redaction."""
+    with pytest.raises(pdf_xmp.UnusableRecordError, match="does not decrypt"):
+        pdf_xmp.process_anonymized_pdf_to_deanonymize(
+            pdf_with_records(tmp_path, record("Jan Jansen")), "other"
+        )
 
 
 def test_a_pdf_without_records_is_refused(tmp_path) -> None:
