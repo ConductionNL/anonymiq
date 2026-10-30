@@ -768,7 +768,7 @@ def retrieve_custom_properties_from_xmp(source: XmpSource) -> List[dict]:
         List[dict]: A list of dictionaries containing custom properties extracted from the XMP XML.
     """
     tag_re = re.compile(r"<rdf:Description([^>]*)/>", re.DOTALL)
-    prop_re = re.compile(r"custom:([A-Za-z]+)=\"([^\"]*)\"")
+    prop_re = re.compile(r"custom:([A-Za-z_]+)=\"([^\"]*)\"")
 
     annotations: List[dict] = []
     for m in tag_re.finditer(source.xmp_xml):

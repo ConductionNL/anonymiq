@@ -150,13 +150,22 @@ def test_an_occurrence_without_ciphertext_is_returned_as_is(tmp_path) -> None:
 def test_description_elements_are_read_as_string_properties(tmp_path) -> None:
     """The old layout gives one dict of string properties per element.
 
-    Property names with an underscore are not matched, so
-    ``encrypted_entity`` is dropped and nothing is decrypted.
+    Property names with an underscore are kept, so ``encrypted_entity`` is
+    read and decrypted.
     """
     occ = occurrence("Jan Jansen")
-    record = {"id": "ann0", "page": "1", "encrypted_entity": occ["encrypted_entity"]}
+    record = {
+        "id": "ann0",
+        "page": "1",
+        "entity_type": "person",
+        "encrypted_entity": occ["encrypted_entity"],
+        "key_fingerprint": "fp",
+    }
     found = read(tmp_path, description_xmp(record, {"id": "ann1", "page": "2"}))
-    assert found == [{"id": "ann0", "page": "1"}, {"id": "ann1", "page": "2"}]
+    assert found == [
+        {**record, "entity": "Jan Jansen"},
+        {"id": "ann1", "page": "2"},
+    ]
 
 
 def test_a_description_record_without_ciphertext(tmp_path) -> None:
