@@ -9,6 +9,8 @@ from fastapi.testclient import TestClient
 
 from src.api.analysis.analyzer import analysis_settings
 from src.api import text_routes as text_analysis
+from src.api.main import app
+from tests.unit.conftest import VALID_AUTH
 
 TEXT = "Jan Jansen mailt jan@example.nl"
 RESULTS = [
@@ -46,6 +48,14 @@ class FakeAnalyzer:
     def anonymize_text(self, text: str, entities: list, language: str) -> str:
         FakeAnalyzer.calls.append(("anonymize", text, entities, language))
         return "<PERSON> mailt <EMAIL>"
+
+
+@pytest.fixture
+def client() -> TestClient:
+    """The shared client, sending valid HTTP Basic credentials: the routes need them."""
+    authed = TestClient(app)
+    authed.auth = VALID_AUTH
+    return authed
 
 
 @pytest.fixture(autouse=True)

@@ -3,9 +3,10 @@ import time
 from dataclasses import dataclass
 from typing import Optional, Union
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status
 
 from src.api.analysis.analyzer import TextAnalyzer, analysis_settings, text_analyzer
+from src.api.auth import get_user
 from src.api.dtos import (
     AnalyzeTextRequest,
     AnalyzeTextResponse,
@@ -15,7 +16,14 @@ from src.api.dtos import (
 )
 
 logger = logging.getLogger(__name__)
-text_analysis_router = APIRouter(tags=["text-analysis"])
+# The text routes take raw text that still carries personal data, the same
+# exposure as the document routes, so they sit behind the same HTTP Basic
+# dependency. It is on the router, so a text route added later is protected
+# without remembering to.
+text_analysis_router = APIRouter(
+    tags=["text-analysis"],
+    dependencies=[Depends(get_user)],
+)
 
 
 def create_pii_entities_from_results(results: list[dict]) -> list[PIIEntity]:
