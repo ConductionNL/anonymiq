@@ -8,7 +8,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from src.api.analysis.analyzer import analysis_settings
-from src.api.routers import text_analysis
+from src.api import text_routes as text_analysis
 
 TEXT = "Jan Jansen mailt jan@example.nl"
 RESULTS = [

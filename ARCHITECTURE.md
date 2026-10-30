@@ -28,25 +28,27 @@ anonymiq runs as its own container, next to Nextcloud rather than inside it.
 
 ## Functional components
 
-We group the code by what the service does, not by FastAPI layer.
+We group the code by what the service does, not by FastAPI layer. Each Python component under `src/api/` is a directory with one public module. Other components import only that module; everything else in the directory is internal.
 
-| Component | What it covers |
-|---|---|
-| Text analysis | The NLP engines, recognisers and patterns, the analysis service and the text endpoints |
-| Documents | Document upload, PDF anonymisation and de-anonymisation, encryption of the mapping, storage |
-| API wiring | Application start-up, configuration, dependencies, request and response models |
-| Web interface | The React front end in `src/ui/` |
-| Developer tooling | Scripts under `scripts/` |
+| Component | Where | Public module | What it covers |
+|---|---|---|---|
+| API | `src/api/*.py` | none (nothing imports it) | Application start-up (`main.py`), the routes (`routes.py`, `document_routes.py`, `text_routes.py`), HTTP Basic auth (`auth.py`), request and response models (`dtos.py`), and the web settings and logging (`config.py`) |
+| Text analysis | `src/api/analysis/` | `analyzer.py`: the analysis defaults, the `TextAnalyzer` interface and the `text_analyzer` factory | The analysis engine, the pattern recognisers and the NLP engines |
+| Documents | `src/api/documents/` | `service.py`: the request session and the operations the document routes call | Upload, PDF anonymisation and de-anonymisation, the XMP records and their encryption, the database and its settings |
+| Web interface | `src/ui/` | | The React front end |
+| Developer tooling | `scripts/` | | Scripts |
 
 ### Boundaries
 
-**Documents** uses **Text analysis** to find entities, never the other way round. **API wiring** is used by both. The front end talks to the API over HTTP only.
+The dependencies run one way: **API** uses **Documents** and **Text analysis**, and **Documents** uses **Text analysis** to find entities. Nothing depends on **API**, and **Text analysis** depends on neither. Each component reads its own settings from the environment. The front end talks to the API over HTTP only.
+
+A new module goes into the component whose work it does. When another component needs it, extend that component's public module with what is needed, and do not import the internal module.
 
 ## How a request flows
 
 1. A client calls `/api/v1/...` with text or a PDF.
-2. The router hands over to the text analyzer, which runs the configured NLP engine and pattern recognisers.
-3. For documents, the findings are applied to a copy of the PDF, and the mapping is stored encrypted so it can be reversed.
+2. The route hands over to the text analyzer (`text_analyzer` from `src/api/analysis/analyzer.py`), which runs the configured NLP engine and pattern recognisers.
+3. For documents, the route calls `src/api/documents/service.py`: the findings are applied to a copy of the PDF, and the mapping is stored encrypted so it can be reversed.
 
 ## Test code
 

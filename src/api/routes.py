@@ -2,8 +2,8 @@ import logging
 
 from fastapi.routing import APIRouter
 
-from src.api.routers.documents import documents_router
-from src.api.routers.text_analysis import text_analysis_router
+from src.api.document_routes import documents_router
+from src.api.text_routes import text_analysis_router
 
 router = APIRouter(prefix="/api/v1")
 
