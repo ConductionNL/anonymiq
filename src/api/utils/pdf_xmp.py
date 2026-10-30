@@ -735,7 +735,7 @@ def retrieve_occurrences_from_xmp_attributes(source: XmpSource) -> List[dict]:
     if value is None:
         return []
     try:
-        occurrences = _occurrence_list(saxutils.unescape(value))
+        occurrences = _occurrence_list(_unescape_attribute(value))
     except json.JSONDecodeError as e:
         logging.error(f"Failed to parse JSON from attribute: {e}")
         return []
@@ -753,6 +753,11 @@ def _attribute_value(xml: str, name: str) -> Optional[str]:
     return None if end == -1 else xml[start:end]
 
 
+def _unescape_attribute(value: str) -> str:
+    """Return an XML attribute value with its entities, ``&quot;`` included, unescaped."""
+    return saxutils.unescape(value, {"&quot;": '"'})
+
+
 def retrieve_custom_properties_from_xmp(source: XmpSource) -> List[dict]:
     """Retrieve custom properties from XMP XML using regex.
 
@@ -767,7 +772,7 @@ def retrieve_custom_properties_from_xmp(source: XmpSource) -> List[dict]:
 
     annotations: List[dict] = []
     for m in tag_re.finditer(source.xmp_xml):
-        props = {k: saxutils.unescape(v) for k, v in prop_re.findall(m.group(1))}
+        props = {k: _unescape_attribute(v) for k, v in prop_re.findall(m.group(1))}
         if props:  # Only add if we found properties
             annotations.append(props)
     return _decrypt_records(annotations, source)

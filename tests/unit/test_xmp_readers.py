@@ -126,14 +126,19 @@ def test_a_wrong_key_leaves_the_entity_empty(tmp_path) -> None:
     assert read(tmp_path, cdata_xmp(occ), key=WRONG_KEY) == [{**occ, "entity": None}]
 
 
-def test_an_attribute_blob_with_quotes_is_read_as_a_description(tmp_path) -> None:
-    """The attribute reader does not unescape ``&quot;``, so its JSON does not
-    parse and the Description reader returns the raw attribute instead."""
-    occ = occurrence("Jan Jansen")
-    escaped = saxutils.escape(blob(occ), {'"': "&quot;"})
-    assert read(tmp_path, attribute_xmp(occ)) == [
-        {"AnnotationData": saxutils.unescape(escaped)}
+def test_an_attribute_blob_with_quotes_is_read_and_decrypted(tmp_path) -> None:
+    """The attribute reader unescapes ``&quot;``, so its JSON parses."""
+    first, second = occurrence("Jan Jansen"), occurrence("Piet", "ann1")
+    assert read(tmp_path, attribute_xmp(first, second)) == [
+        {**first, "entity": "Jan Jansen"},
+        {**second, "entity": "Piet"},
     ]
+
+
+def test_a_description_property_with_quotes_is_unescaped(tmp_path) -> None:
+    """A Description property value gets its ``&quot;`` back as a quote."""
+    found = read(tmp_path, description_xmp({"id": 'ann "0" & co'}))
+    assert found == [{"id": 'ann "0" & co'}]
 
 
 def test_an_occurrence_without_ciphertext_is_returned_as_is(tmp_path) -> None:
