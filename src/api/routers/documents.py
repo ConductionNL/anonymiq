@@ -69,7 +69,9 @@ async def upload_document(
     db: Session = Depends(get_db),
 ) -> AddDocumentResponse:
     validate_files_extensions(files)
-    docs = await pdf_xmp.upload_and_analyze_files(files=files, tags=tags, db=db)
+    docs = await pdf_xmp.upload_and_analyze_files(
+        files, pdf_xmp.UploadTarget(tags=tags or [], db=db)
+    )
 
     return AddDocumentResponseSuccess(files=docs)
 
@@ -87,20 +89,6 @@ def document_request(file_id: str, db: Session = Depends(get_db)) -> DocumentReq
     return DocumentRequest(file_id=file_id, db=db)
 
 
-@dataclass(frozen=True)
-class _TempFiles:
-    """The uploaded file and the restored copy of one deanonymization."""
-
-    anon_path: Path
-    deanon_path: Path
-
-    def remove(self) -> None:
-        """Delete both files when they exist."""
-        for path in (self.anon_path, self.deanon_path):
-            if path.exists():
-                path.unlink()
-
-
 @documents_router.post("/deanonymize")
 async def deanonymize_document(
     file: UploadFile = FastAPIFile(...),
@@ -113,7 +101,7 @@ async def deanonymize_document(
     """
     start = time.perf_counter()
     validate_files_extensions([file])
-    temp = _TempFiles(*await pdf_xmp.create_temp_paths_and_save(file))
+    temp = await pdf_xmp.create_temp_paths_and_save(file)
     try:
         response = _restored_file_response(temp, file.filename)
     except Exception as exc:
@@ -124,7 +112,9 @@ async def deanonymize_document(
     return response
 
 
-def _restored_file_response(temp: _TempFiles, filename: Optional[str]) -> FileResponse:
+def _restored_file_response(
+    temp: pdf_xmp.DeanonymizationFiles, filename: Optional[str]
+) -> FileResponse:
     """Serve the restored PDF, cleaning up the temporary files afterwards."""
     return FileResponse(
         path=str(temp.deanon_path),
@@ -134,7 +124,7 @@ def _restored_file_response(temp: _TempFiles, filename: Optional[str]) -> FileRe
     )
 
 
-def _restore(temp: _TempFiles) -> BackgroundTasks:
+def _restore(temp: pdf_xmp.DeanonymizationFiles) -> BackgroundTasks:
     """Write the restored PDF and return its cleanup; 422 without a record."""
     try:
         doc = pdf_xmp.process_anonymized_pdf_to_deanonymize(
@@ -146,12 +136,7 @@ def _restore(temp: _TempFiles) -> BackgroundTasks:
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="No anonymization metadata found in the document",
         )
-    return pdf_xmp.save_document_and_cleanup(
-        anon_path=temp.anon_path,
-        deanon_path=temp.deanon_path,
-        doc=doc,
-        keep_temp_files=settings.KEEP_TEMP_FILES,
-    )
+    return pdf_xmp.save_document_and_cleanup(doc, temp)
 
 
 def _deanonymization_error(exc: Exception) -> HTTPException:
