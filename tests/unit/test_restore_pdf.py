@@ -137,3 +137,27 @@ def test_a_pdf_without_records_is_refused(tmp_path) -> None:
     doc.close()
     with pytest.raises(ValueError, match="No annotations found"):
         pdf_xmp.process_anonymized_pdf_to_deanonymize(path, KEY)
+
+
+def test_a_text_that_does_not_fit_its_rect_is_refused(tmp_path) -> None:
+    """A rectangle too small for the text is an error, not a blank redaction."""
+    with pytest.raises(pdf_xmp.UnusableRecordError, match="does not fit"):
+        restored_text(tmp_path, record("Jan Jansen", rect=[72.0, 60.0, 80.0, 62.0]))
+
+
+@pytest.mark.parametrize("size", [6, 8, 11, 24])
+def test_anonymize_then_restore_brings_the_text_back(tmp_path, size: int) -> None:
+    """End to end at several font sizes: the original text is back on the page."""
+    source, out = tmp_path / "in.pdf", tmp_path / "out.pdf"
+    doc = pymupdf.open()
+    doc.new_page().insert_text((72, 72), "Jan Jansen belt Piet", fontsize=size)
+    doc.save(str(source))
+    doc.close()
+    pdf_xmp.anonymize_pdf(
+        pdf_xmp.RedactionJob(str(source), str(out), {"Jan Jansen": "person"}, KEY)
+    )
+    restored = pdf_xmp.process_anonymized_pdf_to_deanonymize(out, KEY)
+    text = restored[0].get_text()
+    restored.close()
+    assert "Jan Jansen" in text
+    assert "belt Piet" in text
