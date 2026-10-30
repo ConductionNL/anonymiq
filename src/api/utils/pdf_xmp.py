@@ -90,6 +90,10 @@ def save_document_and_cleanup(
     return background
 
 
+class UnusableRecordError(ValueError):
+    """A record in the XMP packet cannot be decrypted or placed on its page."""
+
+
 def process_anonymized_pdf_to_deanonymize(
     anon_path: Path, key: str
 ) -> pymupdf.Document:
@@ -97,6 +101,7 @@ def process_anonymized_pdf_to_deanonymize(
 
     Raises:
         ValueError: when the PDF holds no records.
+        UnusableRecordError: when a record does not decrypt or cannot be placed.
     """
     hashed_key = hashlib.sha256(key.encode()).digest()
 
@@ -108,39 +113,78 @@ def process_anonymized_pdf_to_deanonymize(
             "No annotations found in the PDF. Ensure the document has been properly anonymized."
         )
 
-    doc = pymupdf.open(str(anon_path))
-    for ann in annotations:
-        _restore_annotation(doc, ann)
+    return _restored(pymupdf.open(str(anon_path)), annotations)
+
+
+def _restored(doc: pymupdf.Document, annotations: list[dict]) -> pymupdf.Document:
+    """Write every record back into the document; close it when one is unusable."""
+    try:
+        for ann in annotations:
+            _restore_annotation(doc, ann)
+    except UnusableRecordError:
+        doc.close()
+        raise
     return doc
 
 
 def _restore_annotation(doc: pymupdf.Document, ann: dict) -> None:
-    """Write one record's plaintext over its rectangle, if it can be placed."""
-    rect = _annotation_rect(doc, ann)
-    if rect is None:
-        return
-    page = doc[int(ann["page"]) - 1]  # Pages are 0-indexed in PyMuPDF
-    page.add_redact_annot(rect, fill=(1, 1, 1), text=ann["entity"])  # type: ignore
+    """Write one record's plaintext over its rectangle."""
+    rect, text = _annotation_rect(ann), _annotation_text(ann)
+    page = doc[_annotation_page(doc, ann) - 1]  # Pages are 0-indexed in PyMuPDF
+    page.add_redact_annot(rect, fill=(1, 1, 1), text=text)  # type: ignore
     page.apply_redactions()  # type: ignore
+    if not _shows(page.get_textbox(rect), text):  # type: ignore
+        raise _unusable(ann, f"does not fit its rect {ann.get('rect')!r}")
 
 
-def _annotation_rect(doc: pymupdf.Document, ann: dict) -> Optional[pymupdf.Rect]:
-    """Return the record's rectangle, or None when it cannot be placed.
+def _shows(written: str, text: str) -> bool:
+    """Tell whether the text read back from a rectangle holds ``text``.
 
-    A record needs ``entity``, ``page`` and ``rect``, a page inside the
-    document and a rectangle of four coordinates.
+    Whitespace is compared loosely, because a long text wraps over lines.
     """
-    if not all(field in ann for field in ("entity", "page", "rect")):
-        return None
-    if not 0 <= int(ann["page"]) - 1 < len(doc):
-        return None
-    rect = ann["rect"]
-    if not isinstance(rect, list):
-        logging.error(
-            f"Invalid rectangle format: {rect}. Expected a list of coordinates."
-        )
-        return None
-    return pymupdf.Rect(*rect) if len(rect) == 4 else None
+    return " ".join(text.split()) in " ".join(written.split())
+
+
+def _annotation_text(ann: dict) -> str:
+    """Return the record's decrypted text."""
+    if "encrypted_entity" not in ann:
+        raise _unusable(ann, "has no encrypted_entity")
+    if ann.get("entity") is None:
+        raise _unusable(ann, "does not decrypt with this key")
+    return str(ann["entity"])
+
+
+def _annotation_page(doc: pymupdf.Document, ann: dict) -> int:
+    """Return the record's 1-based page number, which must be in the document."""
+    try:
+        page = int(ann["page"])
+    except (KeyError, TypeError, ValueError):
+        raise _unusable(ann, f"has no valid page: {ann.get('page')!r}")
+    if not 1 <= page <= len(doc):
+        raise _unusable(ann, f"names page {page} of a {len(doc)}-page document")
+    return page
+
+
+def _annotation_rect(ann: dict) -> pymupdf.Rect:
+    """Return the record's rectangle.
+
+    It may be stored as a list of four numbers or as a string of them, with or
+    without brackets (``"[x0, y0, x1, y1]"`` or ``"x0,y0,x1,y1"``).
+    """
+    rect = ann.get("rect")
+    parts = rect.strip().strip("[]").split(",") if isinstance(rect, str) else rect
+    try:
+        coords = [float(v) for v in parts]  # type: ignore[union-attr]
+    except (TypeError, ValueError):
+        coords = []
+    if len(coords) != 4:
+        raise _unusable(ann, f"has no valid rect of four numbers: {rect!r}")
+    return pymupdf.Rect(*coords)
+
+
+def _unusable(ann: dict, problem: str) -> UnusableRecordError:
+    """Return the error for a record, named by its id."""
+    return UnusableRecordError(f"Record {ann.get('id', '?')} {problem}")
 
 
 async def create_temp_paths_and_save(file: UploadFile) -> DeanonymizationFiles:
