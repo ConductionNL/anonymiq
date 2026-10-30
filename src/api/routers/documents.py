@@ -141,10 +141,9 @@ def _restore(temp: service.DeanonymizationFiles) -> BackgroundTasks:
     422 without records, or with a record that does not decrypt or fit.
     """
     try:
-        doc = service.restored_pdf(temp)
+        return service.restore(temp)
     except ValueError as error:
         raise _unrestorable(error)
-    return service.save_restored(doc, temp)
 
 
 def _unrestorable(error: ValueError) -> HTTPException:

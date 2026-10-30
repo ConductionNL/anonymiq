@@ -7,7 +7,6 @@ import os
 from dataclasses import dataclass
 from typing import Generator
 
-import pymupdf
 from fastapi import BackgroundTasks, UploadFile
 from sqlalchemy.orm import Session
 
@@ -99,15 +98,13 @@ async def save_for_restore(file: UploadFile) -> DeanonymizationFiles:
     return await pdf_xmp.create_temp_paths_and_save(file)
 
 
-def restored_pdf(files: DeanonymizationFiles) -> pymupdf.Document:
-    """Return the PDF with its records written back; ValueError when it has none."""
-    return pdf_xmp.process_anonymized_pdf_to_deanonymize(
+def restore(files: DeanonymizationFiles) -> BackgroundTasks:
+    """Write the PDF with its records back and return the tasks that clean up.
+
+    Raises ValueError when the PDF holds no records, and its subclass
+    UnusableRecordError when a record does not decrypt or cannot be placed.
+    """
+    doc = pdf_xmp.process_anonymized_pdf_to_deanonymize(
         anon_path=files.anon_path, key=document_settings.CRYPTO_KEY.decode()
     )
-
-
-def save_restored(
-    doc: pymupdf.Document, files: DeanonymizationFiles
-) -> BackgroundTasks:
-    """Write the restored PDF and return the tasks that remove both files."""
     return pdf_xmp.save_document_and_cleanup(doc, files)
