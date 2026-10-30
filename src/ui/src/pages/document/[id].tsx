@@ -4,6 +4,7 @@ import { DocumentViewer } from '../../components/document-viewer';
 import { Layout } from '../../components/layout';
 import { BackButton, DocumentError, LoadingDocument } from '../../components/page-states';
 import { useDocument } from '../../hooks/use-document';
+import type { DocumentDto } from '../../types';
 
 export default function DocumentPage() {
   const { id } = useParams<{ id: string }>();
@@ -18,6 +19,12 @@ export default function DocumentPage() {
   if (error || !document) return <DocumentError error={error} onBack={() => navigate('/')} />;
   if (isDetailedView) return <DocumentDetails document={document} />;
 
+  return <DocumentView document={document} />;
+}
+
+/** The regular view of a document, with links to its details and to anonymizing it. */
+function DocumentView({ document }: { document: DocumentDto }) {
+  const navigate = useNavigate();
   return (
     <Layout>
       <BackButton onClick={() => navigate('/')}>Back to Documents</BackButton>

@@ -16,12 +16,7 @@ export function DocumentViewer({ document, onAnonymizeClick, onViewDetailsClick 
     <Card className="w-full">
       <DocumentCardHeader document={document} />
       <CardContent className="space-y-3 sm:space-y-4">
-        <ViewerSection title="Document Details">
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-1 sm:gap-2 text-xs sm:text-sm">
-            <span className="font-medium">ID:</span>
-            <span className="font-mono break-all">{document.id}</span>
-          </div>
-        </ViewerSection>
+        <ViewerId id={document.id} />
         {document.tags.length > 0 && <ViewerTags tags={document.tags} />}
         <ViewerEntities entities={document.pii_entities} />
         <ViewerActions
@@ -40,6 +35,17 @@ function ViewerSection({ title, children }: { title: string; children: React.Rea
       <h3 className="text-base sm:text-lg font-medium mb-1 sm:mb-2">{title}</h3>
       {children}
     </div>
+  );
+}
+
+function ViewerId({ id }: { id: string }) {
+  return (
+    <ViewerSection title="Document Details">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-1 sm:gap-2 text-xs sm:text-sm">
+        <span className="font-medium">ID:</span>
+        <span className="font-mono break-all">{id}</span>
+      </div>
+    </ViewerSection>
   );
 }
 
