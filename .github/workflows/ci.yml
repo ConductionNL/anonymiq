@@ -163,6 +163,7 @@ jobs:
 
       - run: npm ci --no-audit --no-fund
       - run: npm run lint
+      - run: npm test
       - run: npm run build
 
   # Publishing from feature branches is opt in. Staging pulls the `dev` tag
