@@ -39,7 +39,7 @@ def test_the_mask_takes_the_size_of_the_span(tmp_path, mask_sizes: list) -> None
         tmp_path / "in.pdf", (72, 20, "Jan groot"), (144, 8, "Piet klein")
     )
     pdf_xmp.anonymize_pdf(
-        source, str(tmp_path / "out.pdf"), {"Jan": "person", "Piet": "person"}, "k"
+        pdf_xmp.RedactionJob(source, str(tmp_path / "out.pdf"), {"Jan": "person", "Piet": "person"}, "k")
     )
     assert mask_sizes == [20, 8]
 
@@ -56,13 +56,17 @@ def test_an_unreadable_page_falls_back_to_size_11(
         return original(self, option, *args, **kwargs)
 
     monkeypatch.setattr(pymupdf.Page, "get_text", no_dict)
-    pdf_xmp.anonymize_pdf(source, str(tmp_path / "out.pdf"), {"Jan": "person"}, "k")
+    pdf_xmp.anonymize_pdf(
+        pdf_xmp.RedactionJob(source, str(tmp_path / "out.pdf"), {"Jan": "person"}, "k")
+    )
     assert mask_sizes == [11]
 
 
 def test_the_size_is_truncated_to_an_int(tmp_path, mask_sizes: list) -> None:
     source = make_pdf(tmp_path / "in.pdf", (72, 12.7, "Jan"))
-    pdf_xmp.anonymize_pdf(source, str(tmp_path / "out.pdf"), {"Jan": "person"}, "k")
+    pdf_xmp.anonymize_pdf(
+        pdf_xmp.RedactionJob(source, str(tmp_path / "out.pdf"), {"Jan": "person"}, "k")
+    )
     assert mask_sizes == [12]
 
 
@@ -72,9 +76,9 @@ def test_font_details_of_a_hit_between_spans(tmp_path) -> None:
     doc = pymupdf.open(source)
     page = doc[0]
     both = pymupdf.Rect(0, 0, 600, 200)
-    assert pdf_xmp.extract_font_details(page_idx=0, page=page, r=both)[0] == 9
+    assert pdf_xmp.extract_font_details(pdf_xmp._Hit(page=page, page_idx=0, rect=both))[0] == 9
     nothing = pymupdf.Rect(500, 700, 510, 710)
-    assert pdf_xmp.extract_font_details(page_idx=0, page=page, r=nothing) == (
+    assert pdf_xmp.extract_font_details(pdf_xmp._Hit(page=page, page_idx=0, rect=nothing)) == (
         11,
         "Helvetica",
     )

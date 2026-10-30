@@ -289,10 +289,12 @@ def _analyze_and_anonymize(
     """Run the anonymization; any error becomes a 500."""
     try:
         return pdf_xmp.analyze_and_anonymize_document(
-            file_id=str(doc.id),
-            request_body=request_body,
-            doc=doc,
-            key=settings.CRYPTO_KEY.decode(),
+            doc,
+            pdf_xmp.AnonymizationOrder(
+                file_id=str(doc.id),
+                entity_types=request_body.pii_entities_to_anonymize,
+                key=settings.CRYPTO_KEY.decode(),
+            ),
         )
     except Exception as e:
         raise HTTPException(

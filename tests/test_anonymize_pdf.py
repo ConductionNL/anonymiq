@@ -45,10 +45,12 @@ def test_redacts_every_occurrence_and_records_it(tmp_path):
     out = str(tmp_path / "out.pdf")
 
     occurrences = pdf_xmp.anonymize_pdf(
-        source,
-        out,
-        {"Jan Jansen": "person", "NL91ABNA0417164300": "iban", "Niemand": "person"},
-        "secret",
+        pdf_xmp.RedactionJob(
+            source,
+            out,
+            {"Jan Jansen": "person", "NL91ABNA0417164300": "iban", "Niemand": "person"},
+            "secret",
+        )
     )
 
     assert [o["id"] for o in occurrences] == ["ann0", "ann1", "ann2"]
@@ -84,11 +86,13 @@ def test_custom_and_unknown_masks(tmp_path):
     out = str(tmp_path / "out.pdf")
 
     occurrences = pdf_xmp.anonymize_pdf(
-        source,
-        out,
-        {"Jan Jansen": "person", "Utrecht": "location"},
-        "k",
-        entity_masks={"person": "[NAAM]"},
+        pdf_xmp.RedactionJob(
+            source,
+            out,
+            {"Jan Jansen": "person", "Utrecht": "location"},
+            "k",
+            entity_masks={"person": "[NAAM]"},
+        )
     )
 
     assert [o["entity_mask"] for o in occurrences] == ["[NAAM]", "[LOCATION]"]
@@ -103,7 +107,7 @@ def test_a_failed_redaction_is_still_recorded(monkeypatch, tmp_path):
 
     monkeypatch.setattr(pymupdf.Page, "add_redact_annot", refuse)
 
-    occurrences = pdf_xmp.anonymize_pdf(source, out, {"Jan Jansen": "person"}, "k")
+    occurrences = pdf_xmp.anonymize_pdf(pdf_xmp.RedactionJob(source, out, {"Jan Jansen": "person"}, "k"))
 
     assert [o["id"] for o in occurrences] == ["ann0"]
     assert "Jan Jansen" in page_texts(out)[0]
@@ -113,7 +117,7 @@ def test_nothing_found_writes_an_unchanged_copy(tmp_path):
     source = make_pdf(tmp_path / "in.pdf", "Geen namen hier")
     out = str(tmp_path / "out.pdf")
 
-    occurrences = pdf_xmp.anonymize_pdf(source, out, {"Jan": "person"}, "k")
+    occurrences = pdf_xmp.anonymize_pdf(pdf_xmp.RedactionJob(source, out, {"Jan": "person"}, "k"))
 
     assert occurrences == []
     assert page_texts(out)[0].strip() == "Geen namen hier"
@@ -132,6 +136,8 @@ def test_save_mode_is_passed_on(monkeypatch, tmp_path):
 
     monkeypatch.setattr(pymupdf.Document, "save", spy)
 
-    pdf_xmp.anonymize_pdf(source, out, {"Jan": "person"}, "k", incremental_save=False)
+    pdf_xmp.anonymize_pdf(
+        pdf_xmp.RedactionJob(source, out, {"Jan": "person"}, "k", incremental_save=False)
+    )
 
     assert seen["incremental"] is False
