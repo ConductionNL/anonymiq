@@ -33,7 +33,7 @@ We group the code by what the service does, not by FastAPI layer. Each Python co
 | Component | Where | Public module | What it covers |
 |---|---|---|---|
 | API | `src/api/*.py` | none (nothing imports it) | Application start-up (`main.py`), the routes (`routes.py`, `document_routes.py`, `text_routes.py`), HTTP Basic auth (`auth.py`), request and response models (`dtos.py`), and the web settings and logging (`config.py`) |
-| Text analysis | `src/api/analysis/` | `analyzer.py`: the analysis defaults, the `TextAnalyzer` interface and the `text_analyzer` factory | The analysis engine, the pattern recognisers and the NLP engines |
+| Text analysis | `src/api/analysis/` | `analyzer.py`: the analysis defaults and the `text_analyzer` factory; each caller types the analyzer by the methods it calls | The analysis engine, the pattern recognisers and the NLP engines |
 | Documents | `src/api/documents/` | `service.py`: the request session and the operations the document routes call, each handing over to an internal module (`runs.py` for anonymisation and restore) | Upload, PDF anonymisation and de-anonymisation, the XMP records and their encryption, the database and its settings |
 | Web interface | `src/ui/` | | The React front end |
 | Developer tooling | `scripts/` | | Scripts |
