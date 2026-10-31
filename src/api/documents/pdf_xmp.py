@@ -7,14 +7,14 @@ import uuid
 import xml.sax.saxutils as saxutils
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, Iterator, List, Optional, Tuple
+from typing import Dict, Iterator, List, Optional, Protocol, Tuple
 
 import pikepdf
 import pymupdf
 from fastapi import BackgroundTasks, UploadFile
 from sqlalchemy.orm import Session
 
-from src.api.analysis.analyzer import TextAnalyzer, text_analyzer
+from src.api.analysis.analyzer import text_analyzer
 from src.api.documents import database
 from src.api.documents.crud import save
 from src.api.documents.crypto import (
@@ -350,7 +350,14 @@ def _anonymized_path(file_id: str) -> Path:
     return anonym_dir / f"{file_id}.pdf"
 
 
-def _document_entities(doc: database.Document, analyzer: TextAnalyzer) -> list[dict]:
+class _EntityFinder(Protocol):
+    """The part of the text analyzer the PDF code calls."""
+
+    def analyze_text(self, text: str) -> list:
+        """Return the entities found in a text."""
+
+
+def _document_entities(doc: database.Document, analyzer: _EntityFinder) -> list[dict]:
     """Return the PII entities of a document, analyzing its text once.
 
     The result is cached on the document as ``_entities``.
