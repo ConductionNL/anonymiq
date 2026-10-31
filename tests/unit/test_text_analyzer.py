@@ -143,8 +143,8 @@ def built(monkeypatch: pytest.MonkeyPatch) -> dict:
 @pytest.mark.parametrize(
     ("engine", "model"),
     [
-        ("spacy", settings.DEFAULT_SPACY_MODEL),
-        ("transformers", settings.DEFAULT_TRANSFORMERS_MODEL),
+        ("spacy", "nl_core_news_md"),
+        ("transformers", "pdelobelle/robbert-v2-dutch-base"),
     ],
 )
 def test_the_default_model_follows_the_engine(
@@ -196,7 +196,7 @@ def test_the_presidio_spacy_configuration(
             "models": [
                 {
                     "lang_code": settings.DEFAULT_LANGUAGE,
-                    "model_name": settings.DEFAULT_SPACY_MODEL,
+                    "model_name": "nl_core_news_md",
                 }
             ],
         }
@@ -205,7 +205,11 @@ def test_the_presidio_spacy_configuration(
 
 @pytest.mark.parametrize(
     ("asked", "engine"),
-    [(None, settings.DEFAULT_NLP_ENGINE), ("", settings.DEFAULT_NLP_ENGINE), ("transformers", "transformers")],
+    [
+        (None, settings.DEFAULT_NLP_ENGINE),
+        ("", settings.DEFAULT_NLP_ENGINE),
+        ("transformers", "transformers"),
+    ],
 )
 def test_the_factory_builds_the_engine_asked_for(
     built: dict, asked: str | None, engine: str

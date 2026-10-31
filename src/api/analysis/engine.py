@@ -6,6 +6,7 @@ from presidio_analyzer.nlp_engine import NlpEngineProvider
 
 from src.api.analysis.analyzer import analysis_settings as settings
 from src.api.analysis.nlp.loader import load_nlp_engine
+from src.api.analysis.nlp.models import model_settings
 from src.api.analysis.patterns import (
     CaseNumberRecognizer,
     DutchBSNRecognizer,
@@ -41,9 +42,9 @@ class ModularTextAnalyzer:
     ) -> None:
         if model_name is None:
             model_name = (
-                settings.DEFAULT_SPACY_MODEL
+                model_settings.DEFAULT_SPACY_MODEL
                 if nlp_engine == "spacy"
-                else settings.DEFAULT_TRANSFORMERS_MODEL
+                else model_settings.DEFAULT_TRANSFORMERS_MODEL
             )
         self.nlp_engine = load_nlp_engine(
             config_dict={"nlp_engine": nlp_engine, "model_name": model_name}
@@ -153,7 +154,7 @@ def _presidio_spacy_config() -> dict:
         "models": [
             {
                 "lang_code": settings.DEFAULT_LANGUAGE,
-                "model_name": settings.DEFAULT_SPACY_MODEL,
+                "model_name": model_settings.DEFAULT_SPACY_MODEL,
             }
         ],
     }
