@@ -14,7 +14,7 @@ load_dotenv()
 
 
 class AnalysisSettings:
-    """The entity types, language and NLP models the analysis uses by default."""
+    """The entity types, language and NLP engine the analysis uses by default."""
 
     DEFAULT_ENTITIES = [
         "PERSON",
@@ -28,10 +28,6 @@ class AnalysisSettings:
     ]
     DEFAULT_LANGUAGE = os.getenv("DEFAULT_LANGUAGE", "nl")
     DEFAULT_NLP_ENGINE = os.getenv("DEFAULT_NLP_ENGINE", "spacy").lower()
-    DEFAULT_SPACY_MODEL = os.getenv("DEFAULT_SPACY_MODEL", "nl_core_news_md")
-    DEFAULT_TRANSFORMERS_MODEL = os.getenv(
-        "DEFAULT_TRANSFORMERS_MODEL", "pdelobelle/robbert-v2-dutch-base"
-    )
 
 
 analysis_settings = AnalysisSettings()

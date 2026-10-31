@@ -2,8 +2,8 @@ from typing import List, Optional
 
 import spacy
 
-from src.api.analysis.analyzer import analysis_settings as settings
 from src.api.analysis.nlp.base import NLPEngine
+from src.api.analysis.nlp.models import model_settings
 
 
 class SpacyEngine(NLPEngine):
@@ -12,7 +12,7 @@ class SpacyEngine(NLPEngine):
     Laadt een opgegeven SpaCy-model en voert entity extractie uit.
     """
 
-    def __init__(self, model_name: str = settings.DEFAULT_SPACY_MODEL) -> None:
+    def __init__(self, model_name: str = model_settings.DEFAULT_SPACY_MODEL) -> None:
         self.model_name = model_name
         try:
             self.nlp: spacy.language.Language = spacy.load(model_name)

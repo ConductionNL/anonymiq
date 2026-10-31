@@ -103,3 +103,14 @@ def test_entity_group_wins_over_entity() -> None:
 def test_transformers_filter(entities: list, types: list) -> None:
     results = transformers_engine(RAW).analyze(TEXT, entities)
     assert [r["entity_type"] for r in results] == types
+
+
+def test_the_spacy_engine_loads_the_default_model(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    loaded: list[str] = []
+    monkeypatch.setattr(
+        "src.api.analysis.nlp.spacy_engine.spacy.load", lambda name: loaded.append(name)
+    )
+    assert SpacyEngine().model_name == "nl_core_news_md"
+    assert loaded == ["nl_core_news_md"]
