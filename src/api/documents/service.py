@@ -3,34 +3,21 @@
 PDF redaction, the XMP records, encryption and the database stay internal.
 """
 
-import os
-from dataclasses import dataclass
-from typing import Generator
-
 from fastapi import BackgroundTasks, UploadFile
 from sqlalchemy.orm import Session
 
-from src.api.documents import entities, pdf_xmp
-from src.api.documents.crud import get_document, save
-from src.api.documents.database import AnonymizationEvent, Document
-from src.api.documents.session import SessionLocal
-from src.api.documents.settings import document_settings
+from src.api.documents import entities, pdf_xmp, runs
+from src.api.documents.crud import get_document
+from src.api.documents.database import Document
+from src.api.documents.session import get_db as get_db
 
 # The types in the signatures below.
 AnalysisAnonymizationResponse = pdf_xmp.AnalysisAnonymizationResponse
+AnonymizationRun = runs.AnonymizationRun
 DeanonymizationFiles = pdf_xmp.DeanonymizationFiles
 StoredUpload = pdf_xmp.StoredUpload
 UnusableRecordError = pdf_xmp.UnusableRecordError
 UploadTarget = pdf_xmp.UploadTarget
-
-
-def get_db() -> Generator[Session, None, None]:
-    """Yield a database session for one request and close it afterwards."""
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
 
 
 async def store_uploads(
@@ -50,47 +37,14 @@ async def unique_entities(doc: Document) -> list[dict[str, str]]:
     return await entities.unique_entities(doc)
 
 
-@dataclass(frozen=True)
-class AnonymizationRun:
-    """One anonymization of a stored document and how long it took."""
-
-    doc: Document
-    result: AnalysisAnonymizationResponse
-    time_ms_taken: int
-
-    @property
-    def failed(self) -> bool:
-        """Tell whether the run's status reports a failure."""
-        return self.result.status_text.startswith("failed")
-
-
 def anonymize(doc: Document, entity_types: list[str]) -> AnalysisAnonymizationResponse:
     """Anonymize the requested entity types of a stored document."""
-    return pdf_xmp.analyze_and_anonymize_document(
-        doc,
-        pdf_xmp.AnonymizationOrder(
-            file_id=str(doc.id),
-            entity_types=entity_types,
-            key=document_settings.CRYPTO_KEY.decode(),
-        ),
-    )
+    return runs.anonymize(doc, entity_types)
 
 
 def record_run(db: Session, run: AnonymizationRun) -> None:
     """Record a run as an event; keep the output of a success, remove a failure's."""
-    save(
-        db,
-        AnonymizationEvent(
-            document_id=str(run.doc.id),
-            time_taken=run.time_ms_taken,
-            status=run.result.status_text,
-        ),
-    )
-    if not run.failed:
-        run.doc.anonymized_path = str(run.result.output_path)
-        save(db, run.doc)
-    elif os.path.exists(run.result.output_path):
-        os.unlink(run.result.output_path)
+    runs.record_run(db, run)
 
 
 async def save_for_restore(file: UploadFile) -> DeanonymizationFiles:
@@ -104,7 +58,4 @@ def restore(files: DeanonymizationFiles) -> BackgroundTasks:
     Raises ValueError when the PDF holds no records, and its subclass
     UnusableRecordError when a record does not decrypt or cannot be placed.
     """
-    doc = pdf_xmp.process_anonymized_pdf_to_deanonymize(
-        anon_path=files.anon_path, key=document_settings.CRYPTO_KEY.decode()
-    )
-    return pdf_xmp.save_document_and_cleanup(doc, files)
+    return runs.restore(files)
