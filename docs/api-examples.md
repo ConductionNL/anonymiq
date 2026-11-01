@@ -1,4 +1,4 @@
-# OpenAnonymiser – API voorbeelden (curl)
+# Anonymiq – API voorbeelden (curl)
 
 Snelle voorbeelden om de API buiten Swagger te testen.
 

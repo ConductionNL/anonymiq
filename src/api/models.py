@@ -2,7 +2,7 @@ from typing import List, Optional
 
 from pydantic import BaseModel, Field
 
-from src.api.config import settings
+from src.api.analysis.analyzer import analysis_settings
 
 
 class AnalyzeRequest(BaseModel):
@@ -12,7 +12,7 @@ class AnalyzeRequest(BaseModel):
     entities: Optional[List[str]] = Field(
         default_factory=lambda: ["PERSON", "LOCATION", "PHONE_NUMBER", "EMAIL", "IBAN"]
     )
-    language: Optional[str] = settings.DEFAULT_LANGUAGE
+    language: Optional[str] = analysis_settings.DEFAULT_LANGUAGE
 
 
 class EntityResult(BaseModel):

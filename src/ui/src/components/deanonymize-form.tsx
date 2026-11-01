@@ -3,52 +3,24 @@ import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { api } from '../lib/api';
+import { downloadBlob } from '../lib/utils/download';
+import { useBusyAction, useFileChoice } from '../hooks/use-file-choice';
 
 export function DeanonymizeForm() {
-  const [file, setFile] = useState<File | null>(null);
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const choice = useFileChoice();
+  const busy = useBusyAction(choice.setError);
   const [success, setSuccess] = useState(false);
-  
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files.length > 0) {
-      setFile(e.target.files[0]);
-      setError(null);
-    }
-  };
-  
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
-    if (!file) {
-      setError('Please select a file');
-      return;
-    }
-    
-    setIsLoading(true);
-    setError(null);
-    
-    try {
-      const blob = await api.deanonymizeDocument(file);
-      
-      // Create a download link
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `deanonymized_${file.name}`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-      
+    const file = choice.requireFile();
+    if (!file) return;
+    await busy.run(async () => {
+      downloadBlob(await api.deanonymizeDocument(file), `deanonymized_${file.name}`);
       setSuccess(true);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Deanonymization failed');
-    } finally {
-      setIsLoading(false);
-    }
+    }, 'Deanonymization failed');
   };
-  
+
   return (
     <Card className="mb-6">
       <CardHeader>
@@ -60,27 +32,32 @@ export function DeanonymizeForm() {
             <p className="text-green-700">Document successfully deanonymized and downloaded!</p>
           </div>
         ) : (
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div>
-              <Input 
-                type="file" 
-                onChange={handleFileChange} 
-                accept=".pdf"
-                disabled={isLoading}
-              />
-              <p className="mt-1 text-xs text-gray-500">
-                Upload a previously anonymized PDF document
-              </p>
-            </div>
-            
-            {error && <p className="text-red-500 text-sm">{error}</p>}
-            
-            <Button type="submit" disabled={isLoading || !file}>
-              {isLoading ? 'Processing...' : 'Deanonymize Document'}
-            </Button>
-          </form>
+          <DeanonymizeFields choice={choice} isLoading={busy.isLoading} onSubmit={handleSubmit} />
         )}
       </CardContent>
     </Card>
+  );
+}
+
+interface DeanonymizeFieldsProps {
+  choice: ReturnType<typeof useFileChoice>;
+  isLoading: boolean;
+  onSubmit: (e: React.FormEvent) => void;
+}
+
+function DeanonymizeFields({ choice, isLoading, onSubmit }: DeanonymizeFieldsProps) {
+  return (
+    <form onSubmit={onSubmit} className="space-y-4">
+      <div>
+        <Input type="file" onChange={choice.onFileChange} accept=".pdf" disabled={isLoading} />
+        <p className="mt-1 text-xs text-gray-500">
+          Upload a previously anonymized PDF document
+        </p>
+      </div>
+      {choice.error && <p className="text-red-500 text-sm">{choice.error}</p>}
+      <Button type="submit" disabled={isLoading || !choice.file}>
+        {isLoading ? 'Processing...' : 'Deanonymize Document'}
+      </Button>
+    </form>
   );
 }
