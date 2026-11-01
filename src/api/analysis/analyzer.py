@@ -1,14 +1,17 @@
 """Public surface of the text analysis component.
 
-Other components use only this module: the analysis defaults, the
-``TextAnalyzer`` interface and the ``text_analyzer`` factory. The engine, the
-pattern recognizers and the NLP engines behind it stay internal.
+Other components use only this module: the analysis defaults and the
+``text_analyzer`` factory. Each caller types the analyzer by the methods it
+calls. The engine, the pattern recognizers and the NLP engines stay internal.
 """
 
 import os
-from typing import Optional, Protocol
+from typing import TYPE_CHECKING, Optional
 
 from dotenv import load_dotenv
+
+if TYPE_CHECKING:
+    from src.api.analysis.engine import ModularTextAnalyzer
 
 load_dotenv()
 
@@ -33,21 +36,7 @@ class AnalysisSettings:
 analysis_settings = AnalysisSettings()
 
 
-class TextAnalyzer(Protocol):
-    """Finds PII entities in a text and replaces them with their type."""
-
-    def analyze_text(
-        self, text: str, entities: list = ..., language: str = ...
-    ) -> list:
-        """Return the entities found, as dicts with type, text, span and score."""
-
-    def anonymize_text(
-        self, text: str, entities: Optional[list] = None, language: str = ...
-    ) -> str:
-        """Return the text with every entity found replaced by ``<TYPE>``."""
-
-
-def text_analyzer(nlp_engine: Optional[str] = None) -> TextAnalyzer:
+def text_analyzer(nlp_engine: Optional[str] = None) -> "ModularTextAnalyzer":
     """Return an analyzer on the given NLP engine, or on the default one."""
     # Imported here: the engine reads the defaults defined above.
     from src.api.analysis.engine import ModularTextAnalyzer

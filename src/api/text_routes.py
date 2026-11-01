@@ -1,11 +1,11 @@
 import logging
 import time
 from dataclasses import dataclass
-from typing import Optional, Union
+from typing import Optional, Protocol, Union
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
-from src.api.analysis.analyzer import TextAnalyzer, analysis_settings, text_analyzer
+from src.api.analysis.analyzer import analysis_settings, text_analyzer
 from src.api.auth import get_user
 from src.api.dtos import (
     AnalyzeTextRequest,
@@ -51,6 +51,16 @@ def _score(result: dict) -> Optional[Union[float, str]]:
     return score  # type: ignore[no-any-return]
 
 
+class _TextAnalyzer(Protocol):
+    """The text analyzer methods the text routes call."""
+
+    def analyze_text(self, text: str, entities: list, language: str) -> list:
+        """Return the entities found, as dicts with type, text, span and score."""
+
+    def anonymize_text(self, text: str, entities: list, language: str) -> str:
+        """Return the text with every entity found replaced by ``<TYPE>``."""
+
+
 @dataclass(frozen=True)
 class _Anonymized:
     """The entities found in a text and the text with them replaced."""
@@ -64,7 +74,7 @@ class _Analysis:
     """The analyzer for one request, with its engine, entity types and start time."""
 
     nlp_engine: str
-    analyzer: TextAnalyzer
+    analyzer: _TextAnalyzer
     entities: list[str]
     start_time: float
 
