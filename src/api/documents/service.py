@@ -6,8 +6,7 @@ PDF redaction, the XMP records, encryption and the database stay internal.
 from fastapi import BackgroundTasks, UploadFile
 from sqlalchemy.orm import Session
 
-from src.api.documents import entities, pdf_xmp, runs
-from src.api.documents.crud import get_document
+from src.api.documents import crud, entities, pdf_xmp, runs
 from src.api.documents.database import Document
 from src.api.documents.session import get_db as get_db
 
@@ -29,7 +28,7 @@ async def store_uploads(
 
 def find_document(db: Session, document_id: str) -> Document | None:
     """Return the stored document with this id, or None."""
-    return get_document(db, document_id)
+    return crud.get_document(db, document_id)
 
 
 async def unique_entities(doc: Document) -> list[dict[str, str]]:
