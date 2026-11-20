@@ -80,7 +80,7 @@ Rules from `openspec/config.yaml`: a proposal names the OpenRegister change on t
 
 ## Architecture decisions
 
-Decisions recorded today live in [ARCHITECTURE.md](ARCHITECTURE.md) (component boundaries; PyMuPDF confined to one module) and in [openspec/woo-decisions.md](openspec/woo-decisions.md) (D6: anonymiq owns the image object detector).
+Architecture decision records are in [docs/adr/](docs/adr/README.md), one file per decision, each citing the repo file it came from ([ARCHITECTURE.md](ARCHITECTURE.md), [README.md](README.md), [openspec/woo-decisions.md](openspec/woo-decisions.md)). Read them before changing component boundaries, authentication, CORS, PDF handling or the database file.
 
 ## Conventions
 
