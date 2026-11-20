@@ -18,7 +18,7 @@ On a machine whose default Python is 3.13, a plain `uv sync` tried to build spaC
 Docker Compose runs the API and the UI together ([docker-compose.yaml](docker-compose.yaml)):
 
 ```bash
-docker-compose up -d     # API on http://localhost:8001/api/v1/docs, UI on http://localhost:8002
+docker compose up -d     # API on http://localhost:8001/api/v1/docs, UI on http://localhost:8002
 ```
 
 The compose file sets development values for `BASIC_AUTH_USERNAME`, `BASIC_AUTH_PASSWORD`, `CRYPTO_KEY` and `ALLOWED_ORIGINS`. All settings are listed in [.env.example](.env.example).
