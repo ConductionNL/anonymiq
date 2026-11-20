@@ -1,0 +1,43 @@
+# anonymiq
+
+> Python web service (FastAPI on Microsoft Presidio) that finds personal data in Dutch text and PDF documents, replaces it with placeholders, and can restore it for authorised users; OpenRegister calls it over HTTP.
+
+The API serves its OpenAPI schema at runtime on `/api/v1/openapi.json` (Swagger UI on `/api/v1/docs`); no OpenAPI document is committed to this repository.
+
+## Start here
+
+- [AGENTS.md](AGENTS.md): setup, build, test, lint and quality commands, conventions and commit style
+- [README.md](README.md): what the service does, running it locally, with Docker Compose and with Helm (Dutch)
+- [ARCHITECTURE.md](ARCHITECTURE.md): system boundary, directory roles, functional components and their boundaries
+- [PROJECT_OVERVIEW.md](PROJECT_OVERVIEW.md): endpoints, entities, environments and known pitfalls for new engineers (Dutch)
+
+## Decisions
+
+- [docs/adr/README.md](docs/adr/README.md): index of the architecture decision records
+
+## Specs
+
+- [openspec/specs/text-analysis/spec.md](openspec/specs/text-analysis/spec.md): the analyze and anonymize text routes and the pattern recognisers
+- [openspec/specs/document-anonymisation/spec.md](openspec/specs/document-anonymisation/spec.md): PDF upload, redaction with encrypted records, download and restore
+- [openspec/specs/api-access/spec.md](openspec/specs/api-access/spec.md): HTTP Basic authentication, the health route and CORS
+- [openspec/changes/object-detection-in-page-images/proposal.md](openspec/changes/object-detection-in-page-images/proposal.md): open change for an image object detector
+- [openspec/config.yaml](openspec/config.yaml): OpenSpec schema and rules for proposals, specs and tasks
+
+## API usage
+
+- [docs/api-examples.md](docs/api-examples.md): curl examples for the routes (Dutch)
+- [docs/use-cases.md](docs/use-cases.md): use cases and a Swagger walkthrough (Dutch)
+
+## Deployment
+
+- [DEPLOYMENT.md](DEPLOYMENT.md): workflows, image tags and the release flow
+- [docker-compose.yaml](docker-compose.yaml): the API and UI for local development
+- [.env.example](.env.example): every environment setting
+- [charts/openanonymiser/values.yaml](charts/openanonymiser/values.yaml): Helm chart defaults
+
+## Optional
+
+- [CONTRIBUTING.md](CONTRIBUTING.md): tools, branching and PR rules (Dutch)
+- [SECURITY.md](SECURITY.md): how to report a vulnerability
+- [CHANGELOG.md](CHANGELOG.md): changes per release
+- [src/ui/README.md](src/ui/README.md): the React web interface

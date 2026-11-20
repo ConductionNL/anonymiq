@@ -1,6 +1,6 @@
-# OpenAnonymiser UI
+# Anonymiq UI
 
-A simple web frontend for the OpenAnonymiser API. This application allows you to:
+A simple web frontend for the Anonymiq API. This application allows you to:
 
 - Upload documents (PDFs)
 - View document metadata and detected PII entities
@@ -30,7 +30,7 @@ npm install
 npm run dev
 ```
 
-3. Make sure the OpenAnonymiser API is running on <http://localhost:8000>
+3. Make sure the Anonymiq API is running on <http://localhost:8000>
 
 ## Building for Production
 
@@ -42,7 +42,7 @@ The built files will be in the `dist` directory.
 
 ## API Integration
 
-The UI integrates with the following OpenAnonymiser API endpoints:
+The UI integrates with the following Anonymiq API endpoints:
 
 - `POST /documents/upload` - Upload new documents
 - `GET /documents/{file_id}/metadata` - Get document metadata and PII entities

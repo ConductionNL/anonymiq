@@ -7,8 +7,16 @@ import requests
 
 
 def get_base_url() -> str:
-    # Prefer explicit env var; default to local dev
-    return os.getenv("OPENANONYMISER_BASE_URL", "http://localhost:8080")
+    # Prefer explicit env var; default to local dev.
+    # ANONYMIQ_BASE_URL is canonical; OPENANONYMISER_BASE_URL is still read
+    # because it is what every README, CI job and shell profile written before
+    # the rename sets. Dropping it would not error — os.getenv() would fall
+    # through to the localhost default and the suite would quietly test a
+    # different target than the operator asked for.
+    return os.getenv(
+        "ANONYMIQ_BASE_URL",
+        os.getenv("OPENANONYMISER_BASE_URL", "http://localhost:8080"),
+    )
 
 
 def _assert_ok(resp: requests.Response) -> None:

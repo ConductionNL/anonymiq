@@ -1,4 +1,10 @@
-FROM python:3.12.11-bookworm
+FROM python:3.12.16-bookworm
+
+# Pick up Debian security fixes published after the base image was built:
+# the image scan fails the build on any CRITICAL finding that has a fix.
+RUN apt-get update \
+    && apt-get upgrade -y --no-install-recommends \
+    && rm -rf /var/lib/apt/lists/*
 
 # use the latest version of uv from the official repository
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
@@ -42,7 +48,7 @@ RUN mkdir -p /home/presidio/.cache/transformers /home/presidio/.cache/huggingfac
 
 # Download a Dutch NER model for transformers in a separate layer
 # Using a model with a token-classification head (NER)
-RUN MODEL_NAME="wietsedv/bert-base-dutch-cased-ner" && \
+RUN MODEL_NAME="wietsedv/bert-base-dutch-cased-finetuned-conll2002-ner" && \
     echo "Downloading ${MODEL_NAME}..." && \
     .venv/bin/python -c "from transformers import AutoTokenizer, AutoModelForTokenClassification; \
     tokenizer = AutoTokenizer.from_pretrained('${MODEL_NAME}', cache_dir='${TRANSFORMERS_CACHE}'); \

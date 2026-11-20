@@ -70,7 +70,7 @@ def test_upload_document_success(client, test_pdf_path, temp_dirs):
 def test_upload_document_invalid_extension(client, temp_dirs):
     """Test document upload with invalid file extension."""
     # Create a temporary text file
-    from src.api.config import settings
+    from src.api.documents.settings import document_settings as settings
 
     temp_file = Path(settings.DATA_DIR) / "temp/test_file.txt"
     with open(temp_file, "w") as f:

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-OpenAnonymiser String Endpoints Test Script
+Anonymiq String Endpoints Test Script
 Usage: python test_endpoints.py [base_url]
 """
 
@@ -338,7 +338,7 @@ class TestRunner:
 
     def run_all_tests(self):
         """Run all tests and report results."""
-        print(f"{Colors.BLUE}🚀 OpenAnonymiser String Endpoints Test Suite{Colors.NC}")
+        print(f"{Colors.BLUE}🚀 Anonymiq String Endpoints Test Suite{Colors.NC}")
         print(f"{Colors.BLUE}Testing against: {BASE_URL}{Colors.NC}")
         print()
 

@@ -1,4 +1,4 @@
-# OpenAnonymiser – Use-cases en snelle Swagger handleiding
+# Anonymiq – Use-cases en snelle Swagger handleiding
 
 Deze pagina helpt zowel niet-technische gebruikers als developers om de API direct te testen via de Swagger UI, zonder codewijzigingen.
 

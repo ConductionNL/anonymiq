@@ -1,1 +1,1 @@
-"""Integration tests for the OpenAnonymiser API."""
+"""Integration tests for the Anonymiq API."""

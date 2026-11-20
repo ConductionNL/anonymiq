@@ -1,0 +1,24 @@
+schema: spec-driven
+
+context: |
+  Project: Anonymiq (formerly OpenAnonymiser)
+  Repo: ConductionNL/anonymiq
+  Type: Python service (FastAPI), not a Nextcloud app and not an AppAPI ExApp:
+    there is no appinfo/info.xml. Deployed as a container with Helm (charts/)
+    and Argo CD (argocd/). OpenRegister reaches it over HTTP as its
+    `openanonymiser` detection backend.
+  Description: PII detection and anonymisation for Dutch text on Microsoft
+    Presidio, with spaCy or transformers models; from the object detection
+    change on, also objects in page images.
+  Stack: Python 3.12, FastAPI, uv, pytest, ruff, mypy.
+
+  Fleet specs: the company-wide ADRs and shared specs live in hydra/openspec.
+
+rules:
+  proposal:
+    - Name the OpenRegister change on the other side of any HTTP contract.
+    - State what happens when a model or a class is not available.
+  specs:
+    - GIVEN/WHEN/THEN scenarios, each tied to a pytest test by name.
+  tasks:
+    - Every task names the pytest test that proves it, failing before and passing after.

@@ -1,4 +1,4 @@
-# OpenAnonymiser Development Roadmap
+# Anonymiq Development Roadmap
 
 ## 🚀 Current Status
 ✅ **Application successfully deployed and running externally**

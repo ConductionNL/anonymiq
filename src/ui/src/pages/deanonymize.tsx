@@ -16,13 +16,21 @@ export default function DeanonymizePage() {
         <Button variant="outline" onClick={handleBack}>Back to Documents</Button>
       </div>
       
+      <DeanonymizeIntro />
+      
+      <DeanonymizeForm />
+    </Layout>
+  );
+}
+
+function DeanonymizeIntro() {
+  return (
+    <>
       <h2 className="text-2xl font-bold mb-4">Deanonymize Document</h2>
       <p className="text-gray-600 mb-6">
         Upload a previously anonymized document to restore the original content with 
         sensitive information.
       </p>
-      
-      <DeanonymizeForm />
-    </Layout>
+    </>
   );
 }

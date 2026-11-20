@@ -1,7 +1,7 @@
 from fastapi.testclient import TestClient
 
+from src.api.analysis.engine import ModularTextAnalyzer
 from src.api.main import app
-from src.api.services.text_analyzer import ModularTextAnalyzer
 
 
 def test_analyze_text_person_and_email():

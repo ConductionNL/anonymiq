@@ -6,7 +6,12 @@ metadata:
 spec:
   project: default
   source:
-    repoURL: https://github.com/ConductionNL/OpenAnonymiser.git
+    # The repository is now ConductionNL/anonymiq. The old URL still works, but
+    # only through GitHub's rename redirect — which stops the moment anyone
+    # creates a new repo under the old name. The Application name, namespace
+    # and chart path below stay on the old name: those identify live cluster
+    # objects and move with a deployment change, not with this rename.
+    repoURL: https://github.com/ConductionNL/anonymiq.git
     targetRevision: main  # ← Production wijst naar main branch
     path: charts/openanonymiser
   destination:
